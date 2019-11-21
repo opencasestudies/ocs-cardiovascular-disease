@@ -93,7 +93,7 @@ theme_OCS <- theme(axis.text = element_text(size = 10, color="#FDE725FF",family 
 
 ## United States County Boundaries
 
-Let's import the United States county boundaries data. Note that we are importing two different files. These two files have different resolutions. We will determine which of the two files to use. 
+Let's import the United States county boundaries data. Note that we are importing two different files. These two files have different resolutions. We must determine which of the two files to use. 
 
 ```{r}
 map_sf <- read_sf("cb_2017_us_county_20m/cb_2017_us_county_20m.shp")
@@ -131,7 +131,7 @@ ggplot() +
   theme_minimal()
 ```
 
-Since we are not conducting an analysis that uses information directly from the boundaries we use, we will use lower resolution shapefile. This shapefile requires less computational resources and produces almost identical maps at the state level and beyond. 
+Since we are not conducting an analysis that uses information directly from the boundaries we use, we will use lower resolution shapefile. This shapefile requires less computational resources and produces almost identical maps at the state level and beyond, meaning even choropleths we produce during our exploratory analysis will be very accurate representations of the data.
 
 ## ACS data
 
@@ -159,29 +159,56 @@ glimpse(ucd_heart)
 
 # Data wrangling
 
-## United States County Boundaries
-
 ## ACS data
+
+Wrangle total population to help get accurate crude rate.
+
+```{r}
+glimpse(total_pop)
+
+colnames(total_pop) <- total_pop[1,]
+total_pop <- total_pop[-1,]
+total_pop$Id <- NULL
+total_pop$`Margin of Error; Total` <- NULL
+total_pop <- total_pop %>%
+  rename("GEOID"=Id2, "Population"=`Estimate; Total`)
+```
 
 ## Underlying Cause of Death data
 
 ```{r}
 ucd_heart$Notes <- NULL
+ucd_heart$Population <- NULL
+ucd_heart$`Crude Rate` <- NULL
+ucd_heart$`2013 Urbanization` <- as.factor(ucd_heart$`2013 Urbanization`)
 glimpse(ucd_heart)
 ```
 
 ```{r}
+ucd_heart <- ucd_heart %>%
+  rename("GEOID"=`County Code`)
+```
+
+## United States County Boundaries
+
+```{r}
 map_sf <- st_transform(map_sf, 4326)
+
+glimpse(map_sf)
 ```
 
 ```{r}
-ucd_heart <- ucd_heart %>% rename("GEOID"="County Code")
-```
+map_sf <- map_sf %>%
+  left_join(ucd_heart, by="GEOID") %>%
+  left_join(total_pop, by="GEOID")
 
-```{r}
-map_sf <- map_sf %>% left_join(ucd_heart, by="GEOID")
+class(map_sf$Deaths)
+class(map_sf$Population)
 
+map_sf$Population <- as.numeric(map_sf$Population)
 
+map_sf <- map_sf %>%
+  mutate("Crude Rate"=round((Deaths/Population)*1e+06,3))
 ```
 
 We can use information from the US Census Bureau to identify which codes correspond to the states of interest (click. [here](https://www.census.gov/geographies/reference-files/2017/demo/popest/2017-fips.html)).
@@ -217,7 +244,7 @@ contiguous_us <- map_sf %>% filter(!(STATEFP %in% c("02", #Alaska
                                                     "72")))
 ```
 
-## Neighborhood Matrix
+## Lag Covariates
 
 We need to construct the neighborhood matrix in a way that does includes all the relationships between counties of interest, otherwise we will lose valuable information and could bias our results.
 
@@ -267,7 +294,7 @@ ggplot(matrix_region) +
   ggtitle("Neighborhood Matrix", subtitle = "Queen's Case Adjacency")
 ```
 
-## Population weighted smoothing
+#### Population weighted smoothing
 
 ```{r}
 # First order lag
@@ -407,12 +434,14 @@ ggplot(subset) +
 
 # Code garage
 
+```{r}
 tm_shape(subset) +
-	tm_polygons(c("Deaths", "Population", "Crude Rate"),
-				style=c("pretty","pretty","pretty"), breaks=list(NULL, NULL, NULL),
-				palette=list("Oranges", "Purples", "Reds"),
+	tm_polygons(c("Deaths", "Population", "Crude Rate", "2013 Urbanization"),
+				style=c("pretty","pretty","pretty", "pretty"), breaks=list(NULL, NULL, NULL, NULL),
+				palette=list("Oranges", "Purples", "Reds", "Greys"),
 				border.col = "white",
-				title=c("Deaths", "Population", "Crude Rate")) + tm_facets(as.layers = TRUE)
+				title=c("Deaths", "Population", "Crude Rate", "2013 Urbanization")) + tm_facets(as.layers = TRUE)
+```
 				
 # Downloaded data
 
