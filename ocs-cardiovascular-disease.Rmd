@@ -1,0 +1,447 @@
+---
+title: "Spatial Analysis of Cardiovascular Diseases in the Northeastern United States"
+author: "Michael Ontiveros"
+date: "11/4/2019"
+output: 
+    html_document:
+        theme: cosmo 
+        toc: true
+        toc_float: true
+        highlight: tango
+        number_sections: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Details
+
++ Use the US Census Bureau's definition of the Northeast: [click here](https://www.wikiwand.com/en/Northeastern_United_States)
++ Fix the hole with missing data in our shapefile. Look at prior poster for relevant code. 
+    + Shannon County (GEOID 46113) is now known as Oglala Lakota (GEOID 46102).
+    + Wade Hamptom (GEOID 02270) is now known as Kusilvak (GEOID 02158).
++ Use 2017 data ACS CDC WONDER
++ check for correlation between covariates 
+
+# Motivation
+
+## Background
+
+Cardiovascular diseases are currently the leading cause of death in the United States. Much is already known about the causes of most cardiovascular diseases. We intend to explore the environmental characteristics related to the mortality of these diseases. 
+
+## Analysis Goal
+
+We will identify county-level characteristics that are associated with cardiovascular disease mortality in the Northeastern United States, giving particular attention to the potential effects of neighboring counties. 
+
+## Learning objectives
+
+*This needs to be worked on*
+The learning objectives include data wrangling and spatially lagged models.
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(sf)
+library(tmap)
+library(viridis)
+library(spdep) #for neighborhood matrix
+```
+
+# What is the data?
+
+We will be using data from two sources. 
+
+We will be obtaining demographic and geographic information from the US Census Bureaum, our first source of data. Our analysis will use demographic information from the American Community Survey, which functions similarly to the US Census, but is conducted yearly. Two map files for this analysis will be considered. You can obtain these map files [here](https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.2017.html) and here. 
+
+*We need to use the below link* 
+
+https://www.census.gov/geographies/reference-files/2017/demo/popest/2017-fips.html
+
+Our second source of data is underlying cause of death data from CDC WONDER. Simply put, each death record contains separate sections for the underlying cause of death and all multiple causes of death. The CDC compiles then compiles information from these death records to create the respective datasets.
+
+We will be defining deaths with a cardiovascular disease listed as the underlying cause of death as a death as a result of a cardiovascular disease. The way we define deaths in our analysis is important to communicate. Not all deaths have a single, direct cause. For that very reason, all multiple causes of death are listed on death records. We've defined our cases in such a way to simplify our analysis and ensure that the cases we include in our study are the cases most likely to have died as a direct result from a cardiovascular disease. This is particularly important given the high prevalence of cardiovascular diseases.
+
+The CDC's Wide-ranging ONline Data for Epidemiologic Research (WONDER) is a resource for a wide array of datasets surrounding the population health of the United States. There, you can find underlying cause of death data, which can be grouped by other characteristics such as sex, year, geographic region, and more. We will be examining diseases of the heart. These can be obtained using the following UCD-10 codes [here](https://wonder.cdc.gov/ucd-icd10.html):
+
++ I00-I09
++ I11
++ I13
++ I20-I51
+
+# Data import
+
+```{r, echo=FALSE}
+# Temporary version of the OCS theme
+theme_OCS <- theme(axis.text = element_text(size = 10, color="#FDE725FF",family = "Menlo", hjust = 0, face = "bold"),
+        axis.line = element_line(size = 1, color = "#FDE725FF"),
+        axis.title = element_text(size = 10, color="#FDE725FF",family = "Menlo", hjust = 0, face = "bold"),
+        axis.ticks = element_line(size=1,color = "#FDE725FF"),
+        panel.grid.major = element_line(color = "#FFFFFF"),
+        panel.grid.minor = element_line(color = "#FFFFFF"),
+        panel.border = element_blank(),
+        panel.background = element_rect(fill=NA),
+        plot.background = element_rect(fill = "black", color = "black"),
+        plot.title = element_text(size = 14, color="#FDE725FF",family = "Menlo", hjust = 0, face = "bold"),
+        plot.subtitle = element_text(color="#FDE725FF",family = "Menlo",size = 12, hjust = 0),
+        legend.text = element_text(size=8,family = "Menlo", color="#FDE725FF"),
+        legend.title = element_text(size=8, family = "Menlo", color="#FDE725FF", face = "bold", hjust = 0),
+        legend.background = element_rect(fill="black", color = "black"),
+        plot.caption = element_text(size=8, family = "Menlo", color="#FFFFFF", hjust = 0, face= "italic"))
+```
+
+## United States County Boundaries
+
+Let's import the United States county boundaries data. Note that we are importing two different files. These two files have different resolutions. We will determine which of the two files to use. 
+
+```{r}
+map_sf <- read_sf("cb_2017_us_county_20m/cb_2017_us_county_20m.shp")
+
+# Need to show source for this document
+
+map_sf_high_res <- read_sf("cb_2017_us_county_500k/cb_2017_us_county_500k.shp")
+```
+
+Let's compare the boundaries of each file. 
+
+If we plot the boundaries for the City of Baltimore (a county), we can see that there are is substantially more detail in one of files. This could be useful when generating maps that are smaller in scale or when the resolution could impact an analysis.
+
+```{r}
+BALT_shape <- map_sf %>% filter(NAME == "Baltimore", GEOID==24510)
+BALT_shape_high_res <- map_sf_high_res %>% filter(NAME == "Baltimore", GEOID==24510)
+
+ggplot() +
+  geom_sf(data=BALT_shape, color=NA, fill="blue", alpha=0.25) +
+  geom_sf(data=BALT_shape_high_res, color=NA, fill="red", alpha = 0.25) +
+  labs(title = "Impact of resolution of spatial data on shape produced") +
+  theme_minimal()
+```
+
+If we zoom out, we see that the resolutions do make make much of a difference.
+
+```{r}
+MD_shape <- map_sf %>% filter(STATEFP==24)
+MD_shape_high_res <- map_sf_high_res %>% filter(STATEFP==24)
+
+ggplot() +
+  geom_sf(data=MD_shape, color=NA, fill="blue", alpha=0.25) +
+  geom_sf(data=MD_shape_high_res, color=NA, fill="red", alpha = 0.25) +
+  labs(title = "Impact of resolution of spatial data on shape produced") +
+  theme_minimal()
+```
+
+Since we are not conducting an analysis that uses information directly from the boundaries we use, we will use lower resolution shapefile. This shapefile requires less computational resources and produces almost identical maps at the state level and beyond. 
+
+## ACS data
+
+```{r}
+total_pop <- read_csv("ACS_17_5YR_B01003/ACS_17_5YR_B01003_with_ann.csv")
+
+med_age <- read_csv("ACS_17_1YR_B01002/ACS_17_1YR_B01002_with_ann.csv")
+
+race <- read_csv("ACS_17_5YR_B02001/ACS_17_5YR_B02001_with_ann.csv")
+
+ethnicity <- read_csv("ACS_17_5YR_B03002/ACS_17_5YR_B03002_with_ann.csv")
+
+med_inc <- read_csv("ACS_17_5YR_S1903/ACS_17_5YR_S1903_with_ann.csv")
+
+perc_insured <- read_csv("ACS_17_5YR_S2701/ACS_17_5YR_S2701_with_ann.csv")
+```
+
+## Underlying Cause of Death data
+
+```{r}
+ucd_heart <- read_tsv("ucd_cardiovascular_diseases_county_2017.txt",
+                      na = c("Suppressed","Unreliable", "Missing"))
+glimpse(ucd_heart)
+```
+
+# Data wrangling
+
+## United States County Boundaries
+
+## ACS data
+
+## Underlying Cause of Death data
+
+```{r}
+ucd_heart$Notes <- NULL
+glimpse(ucd_heart)
+```
+
+```{r}
+map_sf <- st_transform(map_sf, 4326)
+```
+
+```{r}
+ucd_heart <- ucd_heart %>% rename("GEOID"="County Code")
+```
+
+```{r}
+map_sf <- map_sf %>% left_join(ucd_heart, by="GEOID")
+
+
+```
+
+We can use information from the US Census Bureau to identify which codes correspond to the states of interest (click. [here](https://www.census.gov/geographies/reference-files/2017/demo/popest/2017-fips.html)).
+
+```{r}
+# Using "" around numbers to prevent 0 from disappearing from "09" later in the analysis. If the zero disappears, R does not recognize CT in maps or incorrectly classifies it later in the analysis. 
+
+state_fp <- c("39", #OH
+              "54", #WV
+              "51", #VA
+              "24", #MD
+              "10", #DE
+              "34", #NJ
+              "42", #PA 
+              "36", #NY
+              "09", #CT
+              "44", #RI
+              "25", #MA
+              "50", #VT
+              "33", #NH
+              "23" #ME
+              )
+```
+
+```{r}
+subset <- map_sf %>%
+  filter(STATEFP %in% state_fp)
+```
+
+```{r}
+contiguous_us <- map_sf %>% filter(!(STATEFP %in% c("02", #Alaska
+                                                    "15", #Hawaii
+                                                    "72")))
+```
+
+## Neighborhood Matrix
+
+We need to construct the neighborhood matrix in a way that does includes all the relationships between counties of interest, otherwise we will lose valuable information and could bias our results.
+
+Let's create a neighborhood matrix that includes counties just outside of our region of interest. 
+
+Five states border our region of interest. Let's include them in our neighborhood matrix.
+
+```{r}
+# "" around numbers for the same reason as mentioned before
+
+surrounding_states <- c("37", #NC
+                        "47", #TN
+                        "21", #KY
+                        "18", #IN
+                        "26" #MI
+                        )
+
+matrix_counties <- c(state_fp, surrounding_states)
+
+matrix_region <- map_sf %>%
+  filter(STATEFP %in% matrix_counties)
+
+matrix_region <- matrix_region %>%
+  mutate(Region = ifelse(STATEFP %in% state_fp, "Region of Interest", "Surrounding States"))
+
+```
+
+Let's look at what we did visually. 
+
+```{r}
+ggplot(matrix_region) + 
+  geom_sf(aes(fill=Region))
+```
+
+```{r}
+# Would be neat to give an example of queen's vs rook's case matrices
+matrix_region_sp <- as(matrix_region, 'Spatial')
+nbrs_matrix_region_sp <- poly2nb(matrix_region_sp, queen = TRUE)
+neighbors_sf <- as(nb2lines(nbrs_matrix_region_sp, coords = coordinates(matrix_region_sp)), 'sf')
+neighbors_sf <- st_set_crs(neighbors_sf, st_crs(matrix_region))
+```
+
+```{r}
+ggplot(matrix_region) + 
+  geom_sf(aes(fill = Region), color=NA) +
+  geom_sf(data = neighbors_sf, size=0.25, color="black") +
+  ggtitle("Neighborhood Matrix", subtitle = "Queen's Case Adjacency")
+```
+
+## Population weighted smoothing
+
+```{r}
+# First order lag
+
+FFct_nb_w <- nb2listw(nbrs_matrix_region_sp,style="W", zero.policy = TRUE)
+Wfull<-listw2mat(FFct_nb_w)
+
+matrix_region$smoothed_pop <- Wfull %*% matrix_region$Population
+
+ggplot(matrix_region) +
+  geom_sf(aes(fill=smoothed_pop)) +
+  scale_fill_gradientn(colours = viridis(10))
+
+# Second order lag 
+
+nb_sec_lag_list <- nblag(nbrs_matrix_region_sp, maxlag = 2)
+nb_sec_lag <- nb_sec_lag_list[[2]]
+
+FFct_nb_w <- nb2listw(nb_sec_lag,style="W", zero.policy = TRUE)
+Wfull<-listw2mat(FFct_nb_w)
+
+matrix_region$smoothed_pop_sec_order <- Wfull %*% matrix_region$Population
+
+ggplot(matrix_region) +
+  geom_sf(aes(fill=smoothed_pop_sec_order)) +
+  scale_fill_gradientn(colours = viridis(10))
+
+# Cumulative 1st and 2nd order
+
+nb_cum_lag <- nblag_cumul(nb_sec_lag_list)
+
+FFct_nb_w <- nb2listw(nb_cum_lag,style="W", zero.policy = TRUE)
+Wfull<-listw2mat(FFct_nb_w)
+
+matrix_region$smoothed_pop_cum_order <- Wfull %*% matrix_region$Population
+
+ggplot(matrix_region) +
+  geom_sf(aes(fill=smoothed_pop_cum_order)) +
+  scale_fill_gradientn(colours = viridis(10))
+```
+
+If we take an extreme case, we can better visualize the implications such smoothing can have on our data. 
+
+Below, we take an average of the first through 10th order neighbors/lags. 
+
+The end product is a map with much less variation. 
+
+```{r}
+# Extreme case
+
+nb_ext_lag_list <- nblag(nbrs_matrix_region_sp, maxlag = 10)
+nb_ext_cum_lag <- nblag_cumul(nb_ext_lag_list)
+
+FFct_nb_w <- nb2listw(nb_ext_cum_lag,style="W", zero.policy = TRUE)
+Wfull<-listw2mat(FFct_nb_w)
+
+matrix_region$smoothed_pop_ext_cum_order <- Wfull %*% matrix_region$Population
+
+ggplot(matrix_region) +
+  geom_sf(aes(fill=smoothed_pop_ext_cum_order)) +
+  scale_fill_gradientn(colours = viridis(10))
+```
+
+If we plot the difference of the smoothed population from the actual population, we see that there is systematic overestimation and underestimation throughout this map. This is because of the effect smoothing has on our values. The more counties we use to generate an average summary value for a county, the more the summary value is alike to the average of the entire region. The reduced variation has both a cost and a benefit. 
+
+```{r}
+matrix_region <- matrix_region %>%
+  mutate(Bias = Population - smoothed_pop_ext_cum_order) %>%
+  mutate(Bias_cat = cut(Bias, breaks = 7, include.lowest = TRUE, ordered_result = TRUE)) %>%
+  mutate("Bias Class" = ifelse(sign(Bias)==-1, "Overestimation", ifelse(sign(Bias)==1, "Underestimation", "Neither"))) 
+
+summary(matrix_region$Bias)
+
+ggplot(matrix_region) +
+  geom_sf(aes(fill=Bias_cat)) +
+  scale_fill_manual(values=c(viridis(7)))
+
+ggplot(matrix_region) +
+  geom_sf(aes(fill=`Bias Class`)) +
+  scale_fill_manual(values = c(viridis(2)))
+```
+
+We can think of this in a different way. What if we were instead analyzing data for the entire contiguous US? If we smoothed enough so that the entire northeast region had a very similar population per county, the county values would be very similar to the average of the region. This idea still holds when we are analyzing a smaller region: if we smooth values enough, the values we produce tend to reflect the average of the region we our analyzing.
+
+```{r}
+# This would be a great example to show an error if you don't remove the one value without population. The matrix algebra would not work! 
+
+contiguous_us <- contiguous_us %>% filter(is.na(Population)==FALSE)
+contiguous_us_sp <- as(contiguous_us, 'Spatial')
+nbrs_contiguous_us_sp <- poly2nb(contiguous_us_sp, queen = TRUE)
+
+nb_ext_lag_list_contiguous <- nblag(nbrs_contiguous_us_sp, maxlag = 10)
+nb_ext_cum_lag_contiguous <- nblag_cumul(nb_ext_lag_list_contiguous)
+
+A <- nb2listw(nb_ext_cum_lag_contiguous,style="W", zero.policy = TRUE)
+Wfulle <-listw2mat(A)
+
+contiguous_us$smoothed_pop_ext_cum_order <- Wfulle %*% contiguous_us$Population
+
+ggplot(contiguous_us) +
+  geom_sf(aes(fill=smoothed_pop_ext_cum_order), color="transparent") + 
+  scale_fill_gradientn(colors = viridis(10))
+```
+
+Broadly speaking, smoothing makes values look more like the global average, thereby reducing the global variance, exchanging exactitude in a map for the easier visualization. 
+
+# Exploratory Data Analysis 
+
+We can explore our data in different ways now that we've merged our data to one of the maps we've imported. 
+
+The great thing about using sf objects is that they work very well with the `tidyverse` and `ggplot` packages. The code required to visualize and summarize our spatial data is extremely similar, if not identical to that used in non-spatial applications. 
+
+Let's create a map of the crude mortality rate of cardiovascular diseases across the contiguous United States to help identify trends beyond our region of interest. 
+
+It appears that rural regions of the United States may have greater crude mortality rates. 
+
+```{r}
+ggplot(contiguous_us) +
+  geom_sf(aes(fill=`Crude Rate`), color="black", lwd=0.1) +
+  scale_fill_gradientn(colours = rev(viridis(10))) +
+  labs(title = "Crude Rate", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  theme_OCS
+```
+
+If we look at the Northeastern United States... *update*
+
+```{r}
+ggplot(subset) +
+  geom_sf(aes(fill=`Crude Rate`), color="black", lwd=0.1) +
+  scale_fill_gradientn(colours = viridis(10)) +
+  ggtitle("Crude Rate", subtitle = "Northeastern United States")
+```
+
+# Data Analysis 
+
+# Summary of Results
+
+# Code garage
+
+tm_shape(subset) +
+	tm_polygons(c("Deaths", "Population", "Crude Rate"),
+				style=c("pretty","pretty","pretty"), breaks=list(NULL, NULL, NULL),
+				palette=list("Oranges", "Purples", "Reds"),
+				border.col = "white",
+				title=c("Deaths", "Population", "Crude Rate")) + tm_facets(as.layers = TRUE)
+				
+# Downloaded data
+
+Total population 5 year 2017
+https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_B01003&prodType=table
+
+https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_S2701&prodType=table
+SELECTED CHARACTERISTICS OF HEALTH INSURANCE COVERAGE IN THE UNITED STATES  more information
+2013-2017 American Community Survey 5-Year Estimates
+
+https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_S1903&prodType=table
+MEDIAN INCOME IN THE PAST 12 MONTHS (IN 2017 INFLATION-ADJUSTED DOLLARS)  more information
+2013-2017 American Community Survey 5-Year Estimates
+
+https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_1YR_B01002&prodType=table
+MEDIAN AGE BY SEX
+Universe: Total population  more information
+2017 American Community Survey 1-Year Estimates
+
+https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_B02001&prodType=table
+RACE
+Universe: Total population  more information
+2013-2017 American Community Survey 5-Year Estimates
+
+https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_B03002&prodType=table
+HISPANIC OR LATINO ORIGIN BY RACE
+Universe: Total population  more information
+2013-2017 American Community Survey 5-Year Estimates
+
+UCD Death Data—CDC Wonder
+https://wonder.cdc.gov/ucd-icd10.html
+
