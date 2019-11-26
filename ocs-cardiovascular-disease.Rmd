@@ -23,6 +23,8 @@ knitr::opts_chunk$set(echo = TRUE)
     + Wade Hamptom (GEOID 02270) is now known as Kusilvak (GEOID 02158).
 + Use 2017 data ACS CDC WONDER
 + check for correlation between covariates 
++ Next year, the US Census website—and not American FactFinder—will host the demographic data used for this case study.
++ Consider wrangling FIPS excel sheet found online
 
 # Motivation
 
@@ -30,14 +32,13 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Cardiovascular diseases are currently the leading cause of death in the United States. Much is already known about the causes of most cardiovascular diseases. We intend to explore the environmental characteristics related to the mortality of these diseases. 
 
-## Analysis Goal
+## Analysis goal
 
 We will identify county-level characteristics that are associated with cardiovascular disease mortality in the Northeastern United States, giving particular attention to the potential effects of neighboring counties. 
 
 ## Learning objectives
 
-*This needs to be worked on*
-The learning objectives include data wrangling and spatially lagged models.
+The learning objectives include data wrangling of spatial data, spatial smoothing, and the creation and interpretation of spatially lagged models.
 
 ## Libraries
 
@@ -53,15 +54,21 @@ library(spdep) #for neighborhood matrix
 
 We will be using data from two sources. 
 
-We will be obtaining demographic and geographic information from the US Census Bureaum, our first source of data. Our analysis will use demographic information from the American Community Survey, which functions similarly to the US Census, but is conducted yearly. Two map files for this analysis will be considered. You can obtain these map files [here](https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.2017.html) and here. 
+We will be obtaining demographic and geographic information from the US Census Bureau.
 
-*We need to use the below link* 
+Our analysis will use demographic information from the American Community Survey, which functions similarly to the US Census, but is conducted yearly. 
+
+Two map files for this analysis will be considered. You can obtain these map files [here](https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.2017.html) and [here](https://www.census.gov/cgi-bin/geo/shapefiles/index.php). 
+
+We will use the 2017 State FIPS codes provided [here](https://www.census.gov/geographies/reference-files/2017/demo/popest/2017-fips.html) as a reference for state identification numbers
 
 https://www.census.gov/geographies/reference-files/2017/demo/popest/2017-fips.html
 
 Our second source of data is underlying cause of death data from CDC WONDER. Simply put, each death record contains separate sections for the underlying cause of death and all multiple causes of death. The CDC compiles then compiles information from these death records to create the respective datasets.
 
-We will be defining deaths with a cardiovascular disease listed as the underlying cause of death as a death as a result of a cardiovascular disease. The way we define deaths in our analysis is important to communicate. Not all deaths have a single, direct cause. For that very reason, all multiple causes of death are listed on death records. We've defined our cases in such a way to simplify our analysis and ensure that the cases we include in our study are the cases most likely to have died as a direct result from a cardiovascular disease. This is particularly important given the high prevalence of cardiovascular diseases.
+The way we define deaths in our analysis is important to consider. We will be defining deaths with a cardiovascular disease listed as the underlying cause of death as a death as a result of a cardiovascular disease.
+
+Not all deaths have a single, direct cause. For that very reason, all multiple causes of death are listed on death records. We've defined our cases in such a way to simplify our analysis and ensure that the cases we include in our study are the cases most likely to have died as a direct result from a cardiovascular disease. This is particularly important given the high prevalence of cardiovascular diseases.
 
 The CDC's Wide-ranging ONline Data for Epidemiologic Research (WONDER) is a resource for a wide array of datasets surrounding the population health of the United States. There, you can find underlying cause of death data, which can be grouped by other characteristics such as sex, year, geographic region, and more. We will be examining diseases of the heart. These can be obtained using the following UCD-10 codes [here](https://wonder.cdc.gov/ucd-icd10.html):
 
@@ -91,9 +98,13 @@ theme_OCS <- theme(axis.text = element_text(size = 10, color="#FDE725FF",family 
         plot.caption = element_text(size=8, family = "Menlo", color="#FFFFFF", hjust = 0, face= "italic"))
 ```
 
-## United States County Boundaries
+## United States county boundaries
 
-Let's import the United States county boundaries data. Note that we are importing two different files. These two files have different resolutions. We must determine which of the two files to use. 
+Let's import the United States county boundaries data. Note that we are importing two different files. We must determine which of the two files to use. These two files have different resolutions.
+
+The spatial data format we will be using for our analysis is known as the shapefile format. Shapefiles are a file format originated by Esri, the developers of the popular ArcGIS. Shapefiles can store a wide array of spatial data and are the most widely used format for spatial data. 
+
+Using `reas_sf` by the `sf` package, we can read in the shapefiles for our analysis. 
 
 ```{r}
 map_sf <- read_sf("cb_2017_us_county_20m/cb_2017_us_county_20m.shp")
@@ -105,40 +116,82 @@ map_sf_high_res <- read_sf("cb_2017_us_county_500k/cb_2017_us_county_500k.shp")
 
 Let's compare the boundaries of each file. 
 
-If we plot the boundaries for the City of Baltimore (a county), we can see that there are is substantially more detail in one of files. This could be useful when generating maps that are smaller in scale or when the resolution could impact an analysis.
+If we plot the boundaries for the City of Baltimore (a county), we can see that there is substantially more detail in the larger of the two shapefiles. This could be useful when generating maps that are smaller in scale or when the resolution could impact an analysis.
 
-```{r}
-BALT_shape <- map_sf %>% filter(NAME == "Baltimore", GEOID==24510)
-BALT_shape_high_res <- map_sf_high_res %>% filter(NAME == "Baltimore", GEOID==24510)
+```{r, echo=FALSE}
+BALT_shape <- map_sf %>% filter(GEOID==24510)
+BALT_shape_high_res <- map_sf_high_res %>% filter(GEOID==24510)
 
 ggplot() +
   geom_sf(data=BALT_shape, color=NA, fill="blue", alpha=0.25) +
   geom_sf(data=BALT_shape_high_res, color=NA, fill="red", alpha = 0.25) +
-  labs(title = "Impact of resolution of spatial data on shape produced") +
+  labs(title = "Impact of resolution of spatial data on shape produced", subtitle = "Smaller shapefile in red, larger shapefile in blue") +
   theme_minimal()
 ```
 
-If we zoom out, we see that the resolutions do make make much of a difference.
+With that said, if we zoom out enough, the two shapefiles appear almost identical.
 
-```{r}
+```{r, echo=FALSE}
 MD_shape <- map_sf %>% filter(STATEFP==24)
 MD_shape_high_res <- map_sf_high_res %>% filter(STATEFP==24)
 
 ggplot() +
-  geom_sf(data=MD_shape, color=NA, fill="blue", alpha=0.25) +
-  geom_sf(data=MD_shape_high_res, color=NA, fill="red", alpha = 0.25) +
-  labs(title = "Impact of resolution of spatial data on shape produced") +
+  geom_sf(data=MD_shape, color=NA, fill="red", alpha=0.25) +
+  geom_sf(data=MD_shape_high_res, color=NA, fill="blue", alpha = 0.25) +
+  labs(title = "Impact of resolution of spatial data on shape produced", subtitle = "Smaller shapefile in red, larger shapefile in blue") +
   theme_minimal()
 ```
 
-Since we are not conducting an analysis that uses information directly from the boundaries we use, we will use lower resolution shapefile. This shapefile requires less computational resources and produces almost identical maps at the state level and beyond, meaning even choropleths we produce during our exploratory analysis will be very accurate representations of the data.
+We see that for certain applications the use of the larger shapefile is not only warranted, but necessary. Conversely, for other applications the use of the larger shapefile is not necessary.
+
+Since we are not conducting an analysis that would have introduce bias or cause misclassification as a result of the shapefilefile we use, we are free to use the smaller of the two shapefiles. The smaller shapefile requires less computational resources and produces almost identical maps at the state level and beyond, making it ideal for getting through an analysis.
+
+Often, analyzing data thoroughly can be severely hindered by the computational resources available. This is especially true with spatial applications of R. Unless an analysis requires that those computational resources be used, it is often more efficient and effective to proceed with an analysis in a way that is less computationally-intensive.
+
+Again, because our analysis is not dependent on the absolute precision of the maps we use, but rather the relative location of boundaries, we are able to use the smaller, lower-resolution file. If, for example, our analysis involved the aggregation of points inside a county, we would not have this luxury; the lower resolution would likely lead to points near the true boundary being misclassified as being within the borders of a nearby county. 
 
 ## ACS data
+
+Let's import the following datasets for 2017: 
+
+TOTAL POPULATION
+Universe: Total population  more information
+2013-2017 American Community Survey 5-Year Estimates
+
+[Click here to be directed to the address for download](https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_B01003&prodType=table)
+
+SELECTED CHARACTERISTICS OF HEALTH INSURANCE COVERAGE IN THE UNITED STATES
+2013-2017 American Community Survey 5-Year Estimates
+
+[Click here to be directed to the address for download](https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_S2701&prodType=table)
+
+MEDIAN INCOME IN THE PAST 12 MONTHS (IN 2017 INFLATION-ADJUSTED DOLLARS)
+2013-2017 American Community Survey 5-Year Estimates
+
+[Click here to be directed to the address for download](https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_S1903&prodType=table)
+
+MEDIAN AGE BY SEX
+Universe: Total population
+2013-2017 American Community Survey 5-Year Estimates
+
+[Click here to be directed to the address for download](https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_B01002&prodType=table)
+
+RACE
+Universe: Total population
+2013-2017 American Community Survey 5-Year Estimates
+
+[Click here to be directed to the address for download](https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_B02001&prodType=table)
+
+HISPANIC OR LATINO ORIGIN BY RACE
+Universe: Total population
+2013-2017 American Community Survey 5-Year Estimates
+
+[Click here to be directed to the address for download](https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_B03002&prodType=table)
 
 ```{r}
 total_pop <- read_csv("ACS_17_5YR_B01003/ACS_17_5YR_B01003_with_ann.csv")
 
-med_age <- read_csv("ACS_17_1YR_B01002/ACS_17_1YR_B01002_with_ann.csv")
+med_age <- read_csv("ACS_17_5YR_B01002/ACS_17_5YR_B01002_with_ann.csv")
 
 race <- read_csv("ACS_17_5YR_B02001/ACS_17_5YR_B02001_with_ann.csv")
 
@@ -149,7 +202,9 @@ med_inc <- read_csv("ACS_17_5YR_S1903/ACS_17_5YR_S1903_with_ann.csv")
 perc_insured <- read_csv("ACS_17_5YR_S2701/ACS_17_5YR_S2701_with_ann.csv")
 ```
 
-## Underlying Cause of Death data
+## Underlying cause of death data
+
+Let's import the underlying cause of death data. 
 
 ```{r}
 ucd_heart <- read_tsv("ucd_cardiovascular_diseases_county_2017.txt",
@@ -174,7 +229,7 @@ total_pop <- total_pop %>%
   rename("GEOID"=Id2, "Population"=`Estimate; Total`)
 ```
 
-## Underlying Cause of Death data
+## Underlying cause of death data
 
 ```{r}
 ucd_heart$Notes <- NULL
@@ -189,7 +244,7 @@ ucd_heart <- ucd_heart %>%
   rename("GEOID"=`County Code`)
 ```
 
-## United States County Boundaries
+## United States county boundaries
 
 ```{r}
 map_sf <- st_transform(map_sf, 4326)
@@ -401,7 +456,7 @@ ggplot(contiguous_us) +
 
 Broadly speaking, smoothing makes values look more like the global average, thereby reducing the global variance, exchanging exactitude in a map for the easier visualization. 
 
-# Exploratory Data Analysis 
+# Exploratory data analysis 
 
 We can explore our data in different ways now that we've merged our data to one of the maps we've imported. 
 
@@ -428,9 +483,9 @@ ggplot(subset) +
   ggtitle("Crude Rate", subtitle = "Northeastern United States")
 ```
 
-# Data Analysis 
+# Data analysis 
 
-# Summary of Results
+# Summary of results
 
 # Code garage
 
