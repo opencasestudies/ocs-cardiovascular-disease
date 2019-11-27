@@ -25,6 +25,7 @@ knitr::opts_chunk$set(echo = TRUE)
 + check for correlation between covariates 
 + Next year, the US Census website—and not American FactFinder—will host the demographic data used for this case study.
 + Consider wrangling FIPS excel sheet found online
++ Reorder urbanization categories to correctly reflect "rural-ness."
 
 # Motivation
 
@@ -118,28 +119,46 @@ Let's compare the boundaries of each file.
 
 If we plot the boundaries for the City of Baltimore (a county), we can see that there is substantially more detail in the larger of the two shapefiles. This could be useful when generating maps that are smaller in scale or when the resolution could impact an analysis.
 
-```{r, echo=FALSE}
-BALT_shape <- map_sf %>% filter(GEOID==24510)
-BALT_shape_high_res <- map_sf_high_res %>% filter(GEOID==24510)
+```{r, echo=FALSE, warning=FALSE}
+NY_shape <- map_sf %>% filter(STATEFP=="36" | STATEFP=="34" | STATEFP =="42")
+NY_shape_high_res <- map_sf_high_res %>% filter(STATEFP=="36" | STATEFP=="34" | STATEFP =="42")
 
-ggplot() +
-  geom_sf(data=BALT_shape, color=NA, fill="blue", alpha=0.25) +
-  geom_sf(data=BALT_shape_high_res, color=NA, fill="red", alpha = 0.25) +
-  labs(title = "Impact of resolution of spatial data on shape produced", subtitle = "Smaller shapefile in red, larger shapefile in blue") +
-  theme_minimal()
+#There are 58 counties in California. Since three are shown, a warning regarding the other 55 is shown. 
+
+NY_subset <- ggplot() +
+  geom_sf(data=NY_shape, color="blue", fill="transparent", size = 0.05) +
+  geom_sf(data=NY_shape_high_res, color="red", fill="transparent", size = 0.05) +
+  geom_sf_text(data=NY_shape_high_res, aes(label = NAME), size = 2) +
+  xlim(-74.45, -73.4) + 
+  ylim(40.1, 41.1) +
+  xlab("Longitude") +
+  ylab("Latitude")+
+  theme_void()
 ```
 
 With that said, if we zoom out enough, the two shapefiles appear almost identical.
 
-```{r, echo=FALSE}
-MD_shape <- map_sf %>% filter(STATEFP==24)
-MD_shape_high_res <- map_sf_high_res %>% filter(STATEFP==24)
+```{r, echo=FALSE, warning=FALSE}
+NY_NJ_PA <- ggplot() +
+  geom_sf(data=NY_shape, color="blue", fill="transparent", size = 0.05) +
+  geom_sf(data=NY_shape_high_res, color="red", fill="transparent", size = 0.05) + 
+  xlim(-80.5, -71.75) + 
+  ylim(38.75, 45.25) +
+  theme_void()
+
+arrowA <- data.frame(x1 = 28, x2 = 35, y1 = 22, y2 = 47)
+arrowB <- data.frame(x1 = 28, x2 = 35, y1 = 16, y2 = 3)
 
 ggplot() +
-  geom_sf(data=MD_shape, color=NA, fill="red", alpha=0.25) +
-  geom_sf(data=MD_shape_high_res, color=NA, fill="blue", alpha = 0.25) +
-  labs(title = "Impact of resolution of spatial data on shape produced", subtitle = "Smaller shapefile in red, larger shapefile in blue") +
-  theme_minimal()
+    coord_equal(xlim = c(0, 70), ylim = c(0, 50), expand = FALSE) +
+    annotation_custom(ggplotGrob(NY_NJ_PA), xmin=0, xmax = 35, ymin = 0, 
+        ymax = 50) +
+    annotation_custom(ggplotGrob(NY_subset), xmin=35, xmax = 70, ymin = 0, 
+        ymax = 50) +
+  geom_segment(aes(x = x1, y = y1, xend = x2, yend = y2), data = arrowA, lineend = "round") +
+  geom_segment(aes(x = x1, y = y1, xend = x2, yend = y2), data = arrowB, lineend = "round") +
+  labs(title = "Impact of resolution of spatial data on shape produced", subtitle = "Smaller shapefile in blue, larger shapefile in red") +
+  theme_void()
 ```
 
 We see that for certain applications the use of the larger shapefile is not only warranted, but necessary. Conversely, for other applications the use of the larger shapefile is not necessary.
@@ -216,7 +235,7 @@ glimpse(ucd_heart)
 
 ## ACS data
 
-Wrangle total population to help get accurate crude rate.
+### Total population
 
 ```{r}
 glimpse(total_pop)
@@ -227,6 +246,145 @@ total_pop$Id <- NULL
 total_pop$`Margin of Error; Total` <- NULL
 total_pop <- total_pop %>%
   rename("GEOID"=Id2, "Population"=`Estimate; Total`)
+```
+
+### Median age
+
+```{r}
+glimpse(med_age)
+
+colnames(med_age)
+colnames(med_age) <- med_age[1,]
+med_age <- med_age[-1,]
+med_age$Id <- NULL
+med_age <- med_age %>%
+  rename("GEOID"=Id2, "median_age"=`Estimate; Median age -- - Total:`) %>%
+  select(GEOID, median_age)
+class(med_age$median_age)
+med_age$median_age <- as.numeric(med_age$median_age)
+```
+
+### Race 
+
+```{r}
+glimpse(race)
+
+colnames(race)
+colnames(race) <- race[1,]
+race <- race[-1,]
+race$Id <- NULL
+```
+
+```{r, error=TRUE}
+race <- race %>%
+  rename("GEOID"=Id2,
+         "Total"=`Estimate; Total:`,
+         "W_only"=`Estimate; Total: - White alone`,
+         "BA_only"=`Estimate; Total: - Black or African American alone`,
+         "A_only"=`Estimate; Total: - Asian alone`) %>%
+  mutate(Perc_W_only=W_only/Total,
+         Perc_BA_only=BA_only/Total,
+         Perc_A_only=A_only/Total) %>%
+  select(GEOID,
+         Perc_W_only,
+         Perc_BA_only,
+         Perc_A_only)
+
+class(race$`Estimate; Total:`)
+class(race$`Estimate; Total: - White alone`)
+class(race$`Estimate; Total: - Black or African American alone`)
+class(race$`Estimate; Total: - Asian alone`)
+
+race <- race %>%
+  rename("GEOID"=Id2,
+         "Total"=`Estimate; Total:`,
+         "W_only"=`Estimate; Total: - White alone`,
+         "BA_only"=`Estimate; Total: - Black or African American alone`,
+         "A_only"=`Estimate; Total: - Asian alone`) %>%
+  mutate("Total"=as.numeric(Total),
+         "W_only"=as.numeric(W_only),
+         "BA_only"=as.numeric(BA_only),
+         "A_only"=as.numeric(A_only)) %>%
+  mutate(Perc_W_only=W_only/Total,
+         Perc_BA_only=BA_only/Total,
+         Perc_A_only=A_only/Total) %>%
+  select(GEOID,
+         Perc_W_only,
+         Perc_BA_only,
+         Perc_A_only)
+```
+
+### Ethnicity
+
+```{r, error=TRUE}
+glimpse(ethnicity)
+
+colnames(ethnicity)
+colnames(ethnicity) <- ethnicity[1,]
+ethnicity <- ethnicity[-1,]
+ethnicity$Id <- NULL
+
+ethnicity <- ethnicity %>%
+  rename("GEOID"=Id2,
+         "Total"=`Estimate; Total:`,
+         "Hispanic_Latino"=`Estimate; Hispanic or Latino:`) %>%
+  mutate(Perc_Hispanic_Latino=Hispanic_Latino/Total) %>%
+  select(GEOID,
+         Perc_Hispanic_Latino)
+
+class(ethnicity$`Estimate; Total:`)
+class(ethnicity$`Estimate; Hispanic or Latino:`)
+
+ethnicity <- ethnicity %>%
+  rename("GEOID"=Id2,
+         "Total"=`Estimate; Total:`,
+         "Hispanic_Latino"=`Estimate; Hispanic or Latino:`) %>%
+  mutate("Total"=as.numeric(Total),
+         "Hispanic_Latino"=as.numeric(Hispanic_Latino)) %>%
+  mutate(Perc_Hispanic_Latino=Hispanic_Latino/Total) %>%
+  select(GEOID,
+         Perc_Hispanic_Latino)
+```
+
+### Median income
+
+```{r}
+glimpse(med_inc)
+
+colnames(med_inc)
+colnames(med_inc) <- med_inc[1,]
+med_inc <- med_inc[-1,]
+med_inc$Id <- NULL
+
+med_inc <- med_inc %>%
+  rename("GEOID"=Id2,
+         "median_income"=`Median income (dollars); Estimate; Households`) %>%
+  select(GEOID,
+         median_income)
+
+class(med_inc$median_income)
+med_inc$median_income <- as.numeric(med_inc$median_income)
+
+```
+
+### Percent insured
+
+```{r}
+glimpse(perc_insured)
+
+colnames(perc_insured)
+colnames(perc_insured) <- perc_insured[1,]
+perc_insured <- perc_insured[-1,]
+perc_insured$Id <- NULL
+
+perc_insured <- perc_insured %>%
+  rename("GEOID"=Id2,
+         "perc_insured"=`Percent Insured; Estimate; Civilian noninstitutionalized population`) %>%
+  select(GEOID,
+         perc_insured)
+
+class(perc_insured$perc_insured)
+perc_insured$perc_insured <- as.numeric(perc_insured$perc_insured)
 ```
 
 ## Underlying cause of death data
