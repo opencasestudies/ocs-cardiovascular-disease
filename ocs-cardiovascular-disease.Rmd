@@ -1,7 +1,6 @@
 ---
 title: "Spatial Analysis of Cardiovascular Diseases in the Northeastern United States"
 author: "Michael Ontiveros"
-date: "11/4/2019"
 output: 
     html_document:
         theme: cosmo 
@@ -26,6 +25,7 @@ knitr::opts_chunk$set(echo = TRUE)
 + Next year, the US Census website—and not American FactFinder—will host the demographic data used for this case study.
 + Consider wrangling FIPS excel sheet found online
 + Reorder urbanization categories to correctly reflect "rural-ness."
++ Use head() or glimpse according to dim() output
 
 # Motivation
 
@@ -45,6 +45,7 @@ The learning objectives include data wrangling of spatial data, spatial smoothin
 
 ```{r}
 library(tidyverse)
+library(readxl)
 library(sf)
 library(tmap)
 library(viridis)
@@ -59,11 +60,7 @@ We will be obtaining demographic and geographic information from the US Census B
 
 Our analysis will use demographic information from the American Community Survey, which functions similarly to the US Census, but is conducted yearly. 
 
-Two map files for this analysis will be considered. You can obtain these map files [here](https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.2017.html) and [here](https://www.census.gov/cgi-bin/geo/shapefiles/index.php). 
-
-We will use the 2017 State FIPS codes provided [here](https://www.census.gov/geographies/reference-files/2017/demo/popest/2017-fips.html) as a reference for state identification numbers
-
-https://www.census.gov/geographies/reference-files/2017/demo/popest/2017-fips.html
+Two map files for this analysis will be considered. You can obtain these map files [here](https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.2017.html) and [here](https://www.census.gov/cgi-bin/geo/shapefiles/index.php). We will use the *2017 State, County, Minor Civil Division, and Incorporated Place FIPS Codes* provided [here](https://www.census.gov/geographies/reference-files/2017/demo/popest/2017-fips.html) to make identification of states and county more practical in our analysis. 
 
 Our second source of data is underlying cause of death data from CDC WONDER. Simply put, each death record contains separate sections for the underlying cause of death and all multiple causes of death. The CDC compiles then compiles information from these death records to create the respective datasets.
 
@@ -113,6 +110,8 @@ map_sf <- read_sf("cb_2017_us_county_20m/cb_2017_us_county_20m.shp")
 # Need to show source for this document
 
 map_sf_high_res <- read_sf("cb_2017_us_county_500k/cb_2017_us_county_500k.shp")
+
+FIPS_codes <- read_excel("all-geocodes-v2017.xlsx")
 ```
 
 Let's compare the boundaries of each file. 
@@ -397,9 +396,21 @@ ucd_heart$`2013 Urbanization` <- as.factor(ucd_heart$`2013 Urbanization`)
 glimpse(ucd_heart)
 ```
 
+*According to [this](https://www.cdc.gov/nchs/data/series/sr_02/sr02_166.pdf) document, the ordering should be something along these lines*
+
 ```{r}
 ucd_heart <- ucd_heart %>%
   rename("GEOID"=`County Code`)
+levels(ucd_heart$`2013 Urbanization`)
+ucd_heart$`2013 Urbanization` <- factor(ucd_heart$`2013 Urbanization`,
+       levels = c("NonCore (Nonmetro)",
+                  "Micropolitan (Nonmetro)",
+                  "Small Metro",
+                  "Medium Metro",
+                  "Large Fringe Metro",
+                  "Large Central Metro"),
+       ordered = TRUE)
+levels(ucd_heart$`2013 Urbanization`)
 ```
 
 ## United States county boundaries
@@ -417,12 +428,77 @@ map_sf <- map_sf %>%
 
 class(map_sf$Deaths)
 class(map_sf$Population)
+class(map_sf$`2013 Urbanization`)
 
 map_sf$Population <- as.numeric(map_sf$Population)
 
 map_sf <- map_sf %>%
   mutate("Crude Rate"=round((Deaths/Population)*1e+06,3))
 ```
+
+```{r}
+glimpse(FIPS_codes)
+
+head(FIPS_codes)
+
+colnames(FIPS_codes)
+FIPS_codes[4,1:6]
+colnames(FIPS_codes) <- FIPS_codes[4,]
+FIPS_codes <- FIPS_codes[-(1:4),]
+
+glimpse(FIPS_codes)
+
+sapply(FIPS_codes[,1:(length(colnames(FIPS_codes)))], class) # Apply this to other section of the code where checking of column class is necessary. 
+
+FIPS_codes <- sapply(FIPS_codes[,1:length(colnames(FIPS_codes))], as.factor)
+
+class(FIPS_codes)
+
+FIPS_codes <- as.data.frame(FIPS_codes)
+
+sapply(FIPS_codes[,1:(length(colnames(FIPS_codes))-1)], summary)
+
+colnames(FIPS_codes)
+
+FIPS_codes <- FIPS_codes %>%
+  select(`Summary Level`,
+         `State Code (FIPS)`,
+         `County Code (FIPS)`,
+         `Area Name (including legal/statistical area description)`) %>%
+  rename("summary_level"=`Summary Level`,
+         "state_code"=`State Code (FIPS)`,
+         "county_code"=`County Code (FIPS)`,
+         "area_name"=`Area Name (including legal/statistical area description)`) %>%
+  sapply(as.character) %>%
+  as.data.frame() %>% #Discuss how using sapply converted our dataframe into a matrix, what we are doing essentially is turning it back into a dataframe for manipulation
+  mutate("GEOID"=paste0(state_code,county_code))
+
+FIPS_codes_dfs <- FIPS_codes %>%
+  group_split(summary_level)
+
+FIPS_codes_dfs %>%
+  lapply(`[`, 1, )
+
+state_codes <- FIPS_codes_dfs[[2]]
+glimpse(state_codes)
+state_codes <- state_codes %>%
+  select(state_code, area_name) %>%
+  rename("state_name"=area_name)
+glimpse(state_codes)
+county_codes <- FIPS_codes_dfs[[3]]
+glimpse(county_codes)
+county_codes <- county_codes %>%
+  select(-summary_level) %>%
+  rename("county_name"=area_name)
+
+# Mention how there is a heirarchy to these codes 
+
+county_codes %>%
+  left_join(state_codes, by="state_code")
+  
+```
+
+*Now that we have the reference codes, we can update this section*
 
 We can use information from the US Census Bureau to identify which codes correspond to the states of interest (click. [here](https://www.census.gov/geographies/reference-files/2017/demo/popest/2017-fips.html)).
 
@@ -651,7 +727,7 @@ ggplot(subset) +
 tm_shape(subset) +
 	tm_polygons(c("Deaths", "Population", "Crude Rate", "2013 Urbanization"),
 				style=c("pretty","pretty","pretty", "pretty"), breaks=list(NULL, NULL, NULL, NULL),
-				palette=list("Oranges", "Purples", "Reds", "Greys"),
+				palette=list("Oranges", "Purples", "Reds", "Blues"),
 				border.col = "white",
 				title=c("Deaths", "Population", "Crude Rate", "2013 Urbanization")) + tm_facets(as.layers = TRUE)
 ```
