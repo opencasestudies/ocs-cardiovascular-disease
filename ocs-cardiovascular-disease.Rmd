@@ -26,6 +26,7 @@ knitr::opts_chunk$set(echo = TRUE)
 + Consider wrangling FIPS excel sheet found online
 + Reorder urbanization categories to correctly reflect "rural-ness."
 + Use head() or glimpse according to dim() output
++ Need to use average for lag effects (not weighted smoothing); this may be the same thing, verify! 
 
 # Motivation
 
@@ -44,12 +45,14 @@ The learning objectives include data wrangling of spatial data, spatial smoothin
 ## Libraries
 
 ```{r}
+library(reshape2)
 library(tidyverse)
 library(readxl)
 library(sf)
 library(tmap)
 library(viridis)
-library(spdep) #for neighborhood matrix
+library(spdep) #for neighborhood matrix, correlogram
+library(car) #for variance inflation factor calculation
 ```
 
 # What is the data?
@@ -79,21 +82,21 @@ The CDC's Wide-ranging ONline Data for Epidemiologic Research (WONDER) is a reso
 
 ```{r, echo=FALSE}
 # Temporary version of the OCS theme
-theme_OCS <- theme(axis.text = element_text(size = 10, color="#FDE725FF",family = "Menlo", hjust = 0, face = "bold"),
-        axis.line = element_line(size = 1, color = "#FDE725FF"),
-        axis.title = element_text(size = 10, color="#FDE725FF",family = "Menlo", hjust = 0, face = "bold"),
-        axis.ticks = element_line(size=1,color = "#FDE725FF"),
-        panel.grid.major = element_line(color = "#FFFFFF"),
-        panel.grid.minor = element_line(color = "#FFFFFF"),
+theme_OCS <- theme(axis.text = element_text(size = 10, color="black",family = "Menlo", hjust = 0, face = "bold"),
+        axis.line = element_line(size = 1, color = "black"),
+        axis.title = element_text(size = 10, color="black",family = "Menlo", hjust = 0, face = "bold"),
+        axis.ticks = element_line(size=1,color = "black"),
+        panel.grid.major = element_line(color = "gray"),
+        panel.grid.minor = element_line(color = "gray"),
         panel.border = element_blank(),
         panel.background = element_rect(fill=NA),
-        plot.background = element_rect(fill = "black", color = "black"),
-        plot.title = element_text(size = 14, color="#FDE725FF",family = "Menlo", hjust = 0, face = "bold"),
-        plot.subtitle = element_text(color="#FDE725FF",family = "Menlo",size = 12, hjust = 0),
-        legend.text = element_text(size=8,family = "Menlo", color="#FDE725FF"),
-        legend.title = element_text(size=8, family = "Menlo", color="#FDE725FF", face = "bold", hjust = 0),
-        legend.background = element_rect(fill="black", color = "black"),
-        plot.caption = element_text(size=8, family = "Menlo", color="#FFFFFF", hjust = 0, face= "italic"))
+        plot.background = element_rect(fill = "#FFFFFF", color = "#FFFFFF"),
+        plot.title = element_text(size = 14, color="black",family = "Menlo", hjust = 0, face = "bold"),
+        plot.subtitle = element_text(color="black",family = "Menlo",size = 12, hjust = 0),
+        legend.text = element_text(size=8,family = "Menlo", color="black"),
+        legend.title = element_text(size=8, family = "Menlo", color="black", face = "bold", hjust = 0),
+        legend.background = element_rect(fill="#FFFFFF", color = "#FFFFFF"),
+        plot.caption = element_text(size=8, family = "Menlo", color="black", hjust = 0))
 ```
 
 ## United States county boundaries
@@ -493,14 +496,24 @@ county_codes <- county_codes %>%
 
 # Mention how there is a heirarchy to these codes 
 
-county_codes %>%
-  left_join(state_codes, by="state_code")
+covariates <- county_codes %>%
+  left_join(state_codes, by="state_code") %>%
+  left_join(med_age, by="GEOID") %>%
+  left_join(race, by="GEOID") %>%
+  left_join(ethnicity, by="GEOID") %>%
+  left_join(med_inc, by="GEOID") %>%
+  left_join(perc_insured, by="GEOID")
   
 ```
 
 *Now that we have the reference codes, we can update this section*
 
 We can use information from the US Census Bureau to identify which codes correspond to the states of interest (click. [here](https://www.census.gov/geographies/reference-files/2017/demo/popest/2017-fips.html)).
+
+```{r}
+map_sf <- map_sf %>%
+  left_join(covariates, by="GEOID")
+```
 
 ```{r}
 # Using "" around numbers to prevent 0 from disappearing from "09" later in the analysis. If the zero disappears, R does not recognize CT in maps or incorrectly classifies it later in the analysis. 
@@ -585,6 +598,16 @@ ggplot(matrix_region) +
 
 #### Population weighted smoothing
 
+With this matrix, we can create smoothed maps. Smoothing is the process of borrowing information from surrounding area-level units to create values with less variation.
+
+Our regression will require that we create lagged variables, variables with values that are summaries of proximal regions. What we consider proximal is a matter of our analysis question.
+
+Recall our adjacency matrix. We can borrow information from area-level units—in our case, counties—that are queen adjacent. Doing this would be considered smoothing.
+
+If we smoothed nearest queen adjacent area-level units, we would be creating a first order lagged variable. 
+
+Below we create a first order lagged variable.
+
 ```{r}
 # First order lag
 
@@ -596,7 +619,13 @@ matrix_region$smoothed_pop <- Wfull %*% matrix_region$Population
 ggplot(matrix_region) +
   geom_sf(aes(fill=smoothed_pop)) +
   scale_fill_gradientn(colours = viridis(10))
+```
 
+If we smoothed using the next nearest adjacent area-level units, we would be creating a second order lagged variable. 
+
+The process for creating a second order lagged variable, and so on, is the same.
+
+```{r}
 # Second order lag 
 
 nb_sec_lag_list <- nblag(nbrs_matrix_region_sp, maxlag = 2)
@@ -610,7 +639,13 @@ matrix_region$smoothed_pop_sec_order <- Wfull %*% matrix_region$Population
 ggplot(matrix_region) +
   geom_sf(aes(fill=smoothed_pop_sec_order)) +
   scale_fill_gradientn(colours = viridis(10))
+```
 
+We can also combine combine information from the nearest and next nearest adjacent area-level units. 
+
+The code below uses the list of first and second order adjacent counties to do exactly that. 
+
+```{r}
 # Cumulative 1st and 2nd order
 
 nb_cum_lag <- nblag_cumul(nb_sec_lag_list)
@@ -627,7 +662,7 @@ ggplot(matrix_region) +
 
 If we take an extreme case, we can better visualize the implications such smoothing can have on our data. 
 
-Below, we take an average of the first through 10th order neighbors/lags. 
+Below, we take an average of the first through tenth order adjacent counties. 
 
 The end product is a map with much less variation. 
 
@@ -688,8 +723,30 @@ ggplot(contiguous_us) +
   scale_fill_gradientn(colors = viridis(10))
 ```
 
-Broadly speaking, smoothing makes values look more like the global average, thereby reducing the global variance, exchanging exactitude in a map for the easier visualization. 
+Broadly speaking, smoothing makes values look more like the global average, thereby reducing the global variance, exchanging exactitude in a map for the easier visualization. Smoothing creates fictitious values that are more than often overestimates or understimates of the true value. Despite this, we can use smoothing to advance our analysis with proper caution. Smoothing can help produce more interpretable visualizations as well as lagged variables that can be used in both inferential and predictive models. 
 
+Using the code we used earlier, we can create a function that produces a lagged covariate. This is more efficient that manually creating each variable with the same code and prevents errors. Conversely, errors in our function can be systematically applied to each of our covariates. Since we already have the code and are assured that it functions as we intend, this is not a problem.
+
+```{r}
+lag_creator <- function(vector){
+  lag_vector <- Wfull %*% vector
+  lag_vector
+}
+
+sum(complete.cases(covariates)==FALSE)
+
+covariates[which(complete.cases(covariates)==FALSE),]
+
+matrix_region <- matrix_region %>%
+  mutate("median_age_lag"=lag_creator(median_age),
+         "Perc_W_only_lag"=lag_creator(Perc_W_only),
+         "Perc_BA_only_lag"=lag_creator(Perc_BA_only),
+         "Perc_Hispanic_Latino_lag"=lag_creator(Perc_Hispanic_Latino),
+         "median_income_lag"=lag_creator(median_income),
+         "perc_insured_lag"=lag_creator(perc_insured),
+         )
+
+```
 # Exploratory data analysis 
 
 We can explore our data in different ways now that we've merged our data to one of the maps we've imported. 
@@ -702,8 +759,8 @@ It appears that rural regions of the United States may have greater crude mortal
 
 ```{r}
 ggplot(contiguous_us) +
-  geom_sf(aes(fill=`Crude Rate`), color="black", lwd=0.1) +
-  scale_fill_gradientn(colours = rev(viridis(10))) +
+  geom_sf(aes(fill=log(`Crude Rate`)), color="black", lwd=0.1) +
+  scale_fill_gradientn(colours = viridis(5)) +
   labs(title = "Crude Rate", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
   theme_OCS
 ```
@@ -714,10 +771,143 @@ If we look at the Northeastern United States... *update*
 ggplot(subset) +
   geom_sf(aes(fill=`Crude Rate`), color="black", lwd=0.1) +
   scale_fill_gradientn(colours = viridis(10)) +
-  ggtitle("Crude Rate", subtitle = "Northeastern United States")
+  ggtitle("Crude Rate", subtitle = "Northeastern United States") + 
+  theme_OCS
 ```
 
 # Data analysis 
+
+```{r}
+model1 <- glm(Deaths ~ median_age + 
+              Perc_W_only +
+              Perc_BA_only + 
+              Perc_Hispanic_Latino + 
+              median_income +
+              perc_insured, 
+            family="poisson",
+            offset = log(Population),
+            data=matrix_region,
+            na.action = na.exclude)
+
+model2 <- glm(Deaths ~ median_age + 
+              median_age_lag + 
+              Perc_W_only + 
+              Perc_W_only_lag +
+              Perc_BA_only + 
+              Perc_BA_only_lag + 
+              Perc_Hispanic_Latino + 
+              Perc_Hispanic_Latino_lag + 
+              median_income +
+              median_income_lag +
+              perc_insured +
+              perc_insured_lag, 
+            family="poisson",
+            offset = log(Population),
+            data=matrix_region,
+            na.action = na.exclude)
+```
+
+The presence of multicollinearity means that there is correlation between variables. However, high correlation does not mean that there is multicollinearity. 
+
+Let's produce some correlation matrices and compare them with computed variance inflation factors for our variables. 
+
+```{r}
+melt_cor1 <- as.data.frame(matrix_region) %>%
+  select(median_age,
+         Perc_W_only,
+         Perc_BA_only,
+         Perc_Hispanic_Latino,
+         median_income,
+         perc_insured) %>%
+  cor() %>%
+  round(3) %>%
+  reshape2::melt()
+
+colnames(melt_cor1)
+
+melt_cor1 %>%
+  ggplot(aes(x=Var1, y=Var2, fill=value, label=value)) +
+  geom_tile() +
+  scale_fill_gradient2(low="red", mid="white", high="green") + 
+  geom_text() + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+        axis.text.y = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  ggtitle("Correlation matrix, direct variables") + 
+  xlab("") +
+  ylab("")
+```
+
+```{r}
+melt_cor2 <- as.data.frame(matrix_region) %>%
+  select(median_age_lag,
+         Perc_W_only_lag,
+         Perc_BA_only_lag,
+         Perc_Hispanic_Latino_lag,
+         median_income_lag,
+         perc_insured_lag) %>%
+  cor() %>%
+  round(3) %>%
+  reshape2::melt()
+
+colnames(melt_cor2)
+
+melt_cor2 %>%
+  ggplot(aes(x=Var1, y=Var2, fill=value, label=value)) +
+  geom_tile() +
+  scale_fill_gradient2(low="red", mid="white", high="green") + 
+  geom_text() + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+        axis.text.y = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  ggtitle("Correlation matrix, direct/lagged variables") + 
+  xlab("") +
+  ylab("")
+```
+
+```{r}
+vif(model1)
+```
+
+```{r}
+vif(model2)
+```
+
+```{r}
+sum(is.na(matrix_region$Deaths))
+length(model1$residuals)
+length(model2$residuals)
+```
+
+```{r}
+#Are the residuals being plotted correctly? 
+
+matrix_region <- matrix_region %>%
+  mutate("residuals1"=residuals.glm(model1, "pearson"))
+
+matrix_region %>%
+  ggplot() +
+  geom_sf(aes(fill=residuals1), color="transparent") + 
+  scale_fill_gradient2(low="white", high="red")
+
+matrix_region <- matrix_region %>%
+  mutate("residuals2"=residuals.glm(model2, "pearson"))
+
+matrix_region %>% 
+  ggplot() +
+  geom_sf(aes(fill=residuals2), color="transparent") + 
+  scale_fill_gradient2(low="white", high="red")
+
+matrix_region <- matrix_region[is.na(matrix_region$residuals1)==FALSE,]
+nbrs_matrix_region_sp <- poly2nb(matrix_region, queen = TRUE)
+FFct_nb_w_test <- nb2listw(nbrs_matrix_region_sp,style="W", zero.policy = TRUE)
+
+cor8m2 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals1,order=15,method="I",style="W", zero.policy = TRUE)
+cor8m3 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals2,order=15,method="I",style="W", zero.policy = TRUE)
+plot(cor8m2,ylim=c(-0.1, 0.4),main="Residuals from model 1")
+plot(cor8m3,ylim=c(-0.1, 0.4),main="Residuals from model 2")
+
+```
 
 # Summary of results
 
