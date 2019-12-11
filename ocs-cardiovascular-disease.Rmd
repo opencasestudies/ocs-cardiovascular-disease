@@ -14,6 +14,10 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+```{r}
+set.seed(999)
+```
+
 # Details
 
 + Use the US Census Bureau's definition of the Northeast: [click here](https://www.wikiwand.com/en/Northeastern_United_States)
@@ -697,7 +701,6 @@ The code below uses the list of first and second order adjacent counties to do e
 
 ```{r}
 # Cumulative 1st and 2nd order
-
 nb_cum_lag <- nblag_cumul(nb_sec_lag_list)
 
 FFct_nb_w <- nb2listw(nb_cum_lag,style="W", zero.policy = TRUE)
@@ -786,6 +789,13 @@ lag_creator <- function(vector){
   lag_vector
 }
 
+lag_creator_plus <- function(vector, lags=2){
+  lag_order_list <- nblag(nbrs_matrix_region_sp, maxlag = lags)
+  nb_cum_lag <- nblag_cumul(lag_order_list)
+  lag_vector <- Wfull %*% vector
+  lag_vector
+}
+
 sum(complete.cases(covariates)==FALSE)
 
 covariates[which(complete.cases(covariates)==FALSE),]
@@ -798,6 +808,18 @@ matrix_region <- matrix_region %>%
          "Perc_Hispanic_Latino_lag"=lag_creator(Perc_Hispanic_Latino),
          "median_income_lag"=lag_creator(median_income),
          "perc_insured_lag"=lag_creator(perc_insured),
+         "Population_lag"=lag_creator(Population)
+         )
+
+matrix_region <- matrix_region %>%
+  mutate("median_age_lag2"=lag_creator_plus(median_age),
+         "Perc_W_only_lag2"=lag_creator_plus(Perc_W_only),
+         "Perc_BA_only_lag2"=lag_creator_plus(Perc_BA_only),
+         "Perc_A_only_lag2"=lag_creator_plus(Perc_A_only),
+         "Perc_Hispanic_Latino_lag2"=lag_creator_plus(Perc_Hispanic_Latino),
+         "median_income_lag2"=lag_creator_plus(median_income),
+         "perc_insured_lag2"=lag_creator_plus(perc_insured),
+         "Population_lag2"=lag_creator_plus(Population)
          )
 
 ```
@@ -963,9 +985,6 @@ melt_cor3 %>%
 
 ```{r}
 vif(model1)
-```
-
-```{r}
 vif(model2)
 ```
 
@@ -1073,6 +1092,11 @@ model2_nb <- glm.nb(Deaths ~ median_age +
 ```
 
 ```{r}
+vif(model1_nb)
+vif(model2_nb)
+```
+
+```{r}
 matrix_region <- matrix_region %>%
   mutate("residuals1nb"=residuals.glm(model1_nb, "response"))
 
@@ -1103,8 +1127,6 @@ plot(moran_cor_m2,ylim=c(-0.05, 0.4),main="Residuals from model 2")
 plot(moran_cor_m1nb,ylim=c(-0.05, 0.4),main="Residuals from model 1, nb")
 plot(moran_cor_m2nb,ylim=c(-0.05, 0.4),main="Residuals from model 2, nb")
 ```
-
-We need to count for the spatial autocorrelation in our data. 
 
 ```{r}
 model3 <- glm(Deaths ~ median_age + 
@@ -1174,15 +1196,15 @@ p_value_model4 = 1-pchisq(chi_square_model4, degrees_freedom_model4)
 paste("Pearson goodness of fit = ", round(chi_square_model4,2), ", df = ", degrees_freedom_model4, ", p-value = ", round(p_value_model4,10))
 ```
 
-```{r, error=TRUE}
-model3_nb <- glm.nb(Deaths ~ median_age +
-                      Perc_W_only + 
-                      Perc_A_only + 
-                      Perc_Hispanic_Latino + 
+```{r}
+model3_nb <- glm.nb(Deaths ~ median_age + 
+              Perc_W_only + 
+              Perc_A_only + 
+              Perc_Hispanic_Latino + 
               median_income +
               perc_insured + 
               `2013 Urbanization` +
-                offset(log(Population)), 
+                offset(log(Population)),
             data=matrix_region,
             na.action = na.exclude)
 
@@ -1205,17 +1227,9 @@ model4_nb <- glm.nb(Deaths ~ median_age +
 ```
 
 ```{r}
-vif(model3)
-vif(model4)
 vif(model3_nb)
 vif(model4_nb)
-```
 
-```{r}
-summary(model3)
-summary(model4)
-summary(model3_nb)
-summary(model4_nb)
 ```
 
 ```{r}
@@ -1236,22 +1250,170 @@ plot(moran_cor_m3nb,ylim=c(-0.05, 0.4),main="Residuals from model 3, nb")
 plot(moran_cor_m4nb,ylim=c(-0.05, 0.4),main="Residuals from model 4, nb")
 ```
 
+It looks like there may be residual spatial autocorrelation. 
+
 ```{r}
-cor_df <- as.data.frame(cbind(moran_cor_m1nb["res"][[1]][,1],
+model5 <- glm(Deaths ~ median_age + 
+              median_age_lag2 + 
+              Perc_W_only + 
+              Perc_W_only_lag2 +
+              Perc_A_only + 
+              Perc_A_only_lag2 + 
+              Perc_Hispanic_Latino + 
+              Perc_Hispanic_Latino_lag2 + 
+              median_income +
+              median_income_lag2 +
+              perc_insured +
+              perc_insured_lag2 + 
+                `2013 Urbanization`, 
+            family="poisson",
+            offset = log(Population),
+            data=matrix_region,
+            na.action = na.exclude)
+
+matrix_region <- matrix_region %>%
+  mutate("residuals5"=residuals.glm(model5, "response"))
+```
+
+```{r}
+chi_square_model5 = sum(residuals(model5, type = "pearson")^2)
+
+degrees_freedom_model5 = model5$df.residual
+
+p_value_model5 = 1-pchisq(chi_square_model5, degrees_freedom_model5)
+
+paste("Pearson goodness of fit = ", round(chi_square_model5,2), ", df = ", degrees_freedom_model5, ", p-value = ", round(p_value_model5,10))
+```
+
+```{r, error=TRUE}
+model5_nb <- glm.nb(Deaths ~ median_age + 
+              median_age_lag2 + 
+              Perc_W_only + 
+              Perc_W_only_lag2 + 
+              Perc_A_only + 
+              Perc_A_only_lag2 + 
+              Perc_Hispanic_Latino + 
+              Perc_Hispanic_Latino_lag2 + 
+              median_income +
+              median_income_lag2 +
+              perc_insured +
+              perc_insured_lag2 + 
+              `2013 Urbanization` +
+                offset(log(Population)),
+            data=matrix_region,
+            na.action = na.exclude)
+
+matrix_region <- matrix_region %>%
+  mutate("residuals5nb"=residuals.glm(model5_nb, "response"))
+```
+
+```{r}
+moran_cor_m5 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals5,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m5nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals5nb,order=5,method="I",style="W", zero.policy = TRUE)
+
+par(mfrow=c(1,2))
+
+plot(moran_cor_m5,ylim=c(-0.05, 0.4),main="Residuals from model 5")
+plot(moran_cor_m5nb,ylim=c(-0.05, 0.4),main="Residuals from model 5, nb")
+```
+
+```{r}
+model6 <- glm(Deaths ~ median_age + 
+              median_age_lag2 + 
+              Perc_W_only + 
+              Perc_W_only_lag2 +
+              Perc_A_only + 
+              Perc_A_only_lag2 + 
+              Perc_Hispanic_Latino + 
+              Perc_Hispanic_Latino_lag2 + 
+              median_income +
+              median_income_lag2 +
+              perc_insured +
+              perc_insured_lag2 + 
+                `2013 Urbanization`,
+              Population_lag,
+            family="poisson",
+            offset = log(Population),
+            data=matrix_region,
+            na.action = na.exclude)
+
+matrix_region <- matrix_region %>%
+  mutate("residuals6"=residuals.glm(model6, "response"))
+
+moran_cor_m6 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals6,order=5,method="I",style="W", zero.policy = TRUE)
+```
+
+```{r}
+chi_square_model6 = sum(residuals(model6, type = "pearson")^2)
+
+degrees_freedom_model6 = model6$df.residual
+
+p_value_model6 = 1-pchisq(chi_square_model6, degrees_freedom_model6)
+
+paste("Pearson goodness of fit = ", round(chi_square_model6,2), ", df = ", degrees_freedom_model6, ", p-value = ", round(p_value_model6,10))
+```
+
+```{r, error=TRUE}
+# no 2013 urbanization category, population_lag introduced
+#not the same as model6
+model6_nb <- glm.nb(Deaths ~ median_age + 
+              median_age_lag2 + 
+              Perc_W_only + 
+              Perc_W_only_lag2 + 
+              Perc_A_only + 
+              Perc_A_only_lag2 + 
+              Perc_Hispanic_Latino + 
+              Perc_Hispanic_Latino_lag2 + 
+              median_income +
+              median_income_lag2 +
+              perc_insured +
+              perc_insured_lag2 +
+                `2013 Urbanization` + 
+                Population_lag2 + 
+                offset(log(Population)),
+            data=matrix_region,
+            na.action = na.exclude)
+
+matrix_region <- matrix_region %>%
+  mutate("residuals6nb"=residuals.glm(model6_nb, "response"))
+
+moran_cor_m6nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals6nb,order=5,method="I",style="W", zero.policy = TRUE)
+
+plot(moran_cor_m6,ylim=c(-0.05, 0.4),main="Residuals from model 6")
+plot(moran_cor_m6nb,ylim=c(-0.05, 0.4),main="Residuals from model 6, nb")
+```
+
+```{r}
+morans_i <- c(moran_cor_m1nb["res"][[1]][,1],
       moran_cor_m2nb["res"][[1]][,1],
       moran_cor_m3nb["res"][[1]][,1],
-      moran_cor_m4nb["res"][[1]][,1]
-      ))
+      moran_cor_m4nb["res"][[1]][,1],
+      moran_cor_m5nb["res"][[1]][,1],
+      moran_cor_m6nb["res"][[1]][,1]
+      )
 
-cor_df <- cor_df %>%
-  rename("model1nb"=V1,
-         "model2nb"=V2,
-         "model3nb"=V3,
-         "model4nb"=V4
-         ) %>%
-  mutate(lag=row_number())
+model <- c(rep("M1NB",5),
+           rep("M2NB",5),
+           rep("M3NB",5),
+           rep("M4NB",5),
+           rep("M5NB",5),
+           rep("M6NB",5)
+           )
 
-cor_df <- cor_df %>% gather(key=model, value=morans_i, -lag)
+lag <- rep(seq(1,5,by=1),6)
+
+cor_df <- as.data.frame(cbind(morans_i, model, lag))
+
+cor_df$morans_i <- as.numeric(as.character(cor_df$morans_i))
+
+cor_df$model <- factor(cor_df$model, levels=c("M1NB",
+                                                 "M2NB",
+                                                 "M3NB",
+                                                 "M4NB",
+                                                 "M5NB",
+                                              "M6NB"))
+
+cor_df$lag <- as.numeric(as.character(cor_df$lag))
 
 cor_df %>%
   ggplot(aes(x=lag, y=morans_i, color=model)) +
@@ -1259,7 +1421,12 @@ cor_df %>%
   geom_line() + 
   geom_hline(yintercept = 0, color="black") + 
   ggtitle("Moran's I Correlogram by Model", subtitle = "Our models do not account for the spatial autocorrelation of our autocome.") + 
+  facet_grid(.~model)
   theme_OCS
+```
+
+```{r}
+moran.mc(matrix_region$residuals6nb, listw =FFct_nb_w_test,nsim = 999, zero.policy = TRUE)
 ```
 
 # Summary of results
