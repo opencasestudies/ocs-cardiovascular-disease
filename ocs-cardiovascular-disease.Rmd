@@ -26,7 +26,6 @@ knitr::opts_chunk$set(echo = TRUE)
 + Consider wrangling FIPS excel sheet found online
 + Reorder urbanization categories to correctly reflect "rural-ness."
 + Use head() or glimpse according to dim() output
-+ Need to use average for lag effects (not weighted smoothing); this may be the same thing, verify! 
 
 # Motivation
 
@@ -45,6 +44,7 @@ The learning objectives include data wrangling of spatial data, spatial smoothin
 ## Libraries
 
 ```{r}
+library(MASS)
 library(reshape2)
 library(tidyverse)
 library(readxl)
@@ -233,14 +233,28 @@ ucd_heart <- read_tsv("ucd_cardiovascular_diseases_county_2017.txt",
 glimpse(ucd_heart)
 ```
 
+Now that we've imported the data, we can wrangle the data for our analysis needs. 
+
 # Data wrangling
+
+We cannot wrangle a dataset for a specific purpose without first developing a clear idea of its components. This is particularly true when there are many columns. 
+
+The `head()` and `glimpse()` functions from the `utils` and `tidyverse` packages are particularly useful for that purpose. Each function has an advantage and disadvantage over the other. The `head()` function returns the first several rows of data; this output, while very easy to read for datasets with few dimensions, is too messy to interpret in the presence of more than a handful of columns of data. The `glimpse()` function returns the first several rows for each and every column of a dataframe; this output, while thorough, can generate a lot of output that is difficult to sift through.
+
+Rather than use one exclusively, we will use whichever is more beneficial for the dataset we are working with. 
+
+Using the `dim()` function from `base`, we can make that determination. 
+
+If a function has few dimensions, we will use the `head()` function. If a function has more than 5 columns, we will use the `glimpse()` function. If a function too many dimensions to sift through reasonably, we will use regular expressions to identify our variable of interest. 
 
 ## ACS data
 
 ### Total population
 
 ```{r}
-glimpse(total_pop)
+dim(total_pop)
+
+head(total_pop)
 
 colnames(total_pop) <- total_pop[1,]
 total_pop <- total_pop[-1,]
@@ -253,6 +267,8 @@ total_pop <- total_pop %>%
 ### Median age
 
 ```{r}
+dim(med_age)
+
 glimpse(med_age)
 
 colnames(med_age)
@@ -269,6 +285,8 @@ med_age$median_age <- as.numeric(med_age$median_age)
 ### Race 
 
 ```{r}
+dim(race)
+
 glimpse(race)
 
 colnames(race)
@@ -319,6 +337,8 @@ race <- race %>%
 ### Ethnicity
 
 ```{r, error=TRUE}
+dim(ethnicity)
+
 glimpse(ethnicity)
 
 colnames(ethnicity)
@@ -351,12 +371,24 @@ ethnicity <- ethnicity %>%
 ### Median income
 
 ```{r}
-glimpse(med_inc)
+dim(med_inc)
 
-colnames(med_inc)
-colnames(med_inc) <- med_inc[1,]
+colnames(med_inc)[1:50]
+
+head(med_inc)
+
+colnames(med_inc) <- med_inc[1, ]
+
 med_inc <- med_inc[-1,]
 med_inc$Id <- NULL
+
+sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome"))
+sum(str_detect(colnames(med_inc), "[Ee]stimate"))
+sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") &
+      str_detect(colnames(med_inc),"[Ee]stimate"))
+
+colnames(med_inc)[which(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & 
+                          str_detect(colnames(med_inc), "[Ee]stimate"))]
 
 med_inc <- med_inc %>%
   rename("GEOID"=Id2,
@@ -366,18 +398,29 @@ med_inc <- med_inc %>%
 
 class(med_inc$median_income)
 med_inc$median_income <- as.numeric(med_inc$median_income)
-
 ```
 
 ### Percent insured
 
 ```{r}
-glimpse(perc_insured)
+dim(perc_insured)
 
-colnames(perc_insured)
-colnames(perc_insured) <- perc_insured[1,]
+colnames(perc_insured)[1:50]
+
+head(perc_insured)[,1:5]
+
+colnames(perc_insured) <- perc_insured[1, ]
+
 perc_insured <- perc_insured[-1,]
 perc_insured$Id <- NULL
+
+sum(str_detect(colnames(perc_insured), "[Pp]ercent [Ii]nsured"))
+sum(str_detect(colnames(perc_insured), "[Ee]stimate"))
+sum(str_detect(colnames(perc_insured), "[Pp]ercent [Ii]nsured") &
+      str_detect(colnames(perc_insured),"[Ee]stimate"))
+
+colnames(med_inc)[which(str_detect(colnames(med_inc), "Pp]ercent [Ii]nsured") & 
+                          str_detect(colnames(med_inc), "[Ee]stimate"))]
 
 perc_insured <- perc_insured %>%
   rename("GEOID"=Id2,
@@ -392,6 +435,10 @@ perc_insured$perc_insured <- as.numeric(perc_insured$perc_insured)
 ## Underlying cause of death data
 
 ```{r}
+dim(ucd_heart)
+
+glimpse(ucd_heart)
+
 ucd_heart$Notes <- NULL
 ucd_heart$Population <- NULL
 ucd_heart$`Crude Rate` <- NULL
@@ -420,6 +467,8 @@ levels(ucd_heart$`2013 Urbanization`)
 
 ```{r}
 map_sf <- st_transform(map_sf, 4326)
+
+dim(map_sf)
 
 glimpse(map_sf)
 ```
@@ -596,7 +645,8 @@ ggplot(matrix_region) +
   ggtitle("Neighborhood Matrix", subtitle = "Queen's Case Adjacency")
 ```
 
-#### Population weighted smoothing
+#### Smoothing
+
 
 With this matrix, we can create smoothed maps. Smoothing is the process of borrowing information from surrounding area-level units to create values with less variation.
 
@@ -728,6 +778,9 @@ Broadly speaking, smoothing makes values look more like the global average, ther
 Using the code we used earlier, we can create a function that produces a lagged covariate. This is more efficient that manually creating each variable with the same code and prevents errors. Conversely, errors in our function can be systematically applied to each of our covariates. Since we already have the code and are assured that it functions as we intend, this is not a problem.
 
 ```{r}
+FFct_nb_w <- nb2listw(nbrs_matrix_region_sp,style="W", zero.policy = TRUE)
+Wfull<-listw2mat(FFct_nb_w)
+
 lag_creator <- function(vector){
   lag_vector <- Wfull %*% vector
   lag_vector
@@ -741,6 +794,7 @@ matrix_region <- matrix_region %>%
   mutate("median_age_lag"=lag_creator(median_age),
          "Perc_W_only_lag"=lag_creator(Perc_W_only),
          "Perc_BA_only_lag"=lag_creator(Perc_BA_only),
+         "Perc_A_only_lag"=lag_creator(Perc_A_only),
          "Perc_Hispanic_Latino_lag"=lag_creator(Perc_Hispanic_Latino),
          "median_income_lag"=lag_creator(median_income),
          "perc_insured_lag"=lag_creator(perc_insured),
@@ -781,9 +835,11 @@ ggplot(subset) +
 model1 <- glm(Deaths ~ median_age + 
               Perc_W_only +
               Perc_BA_only + 
+              Perc_A_only +
               Perc_Hispanic_Latino + 
               median_income +
-              perc_insured, 
+              perc_insured + 
+              `2013 Urbanization`, 
             family="poisson",
             offset = log(Population),
             data=matrix_region,
@@ -795,12 +851,15 @@ model2 <- glm(Deaths ~ median_age +
               Perc_W_only_lag +
               Perc_BA_only + 
               Perc_BA_only_lag + 
+              Perc_A_only +
+              Perc_A_only_lag + 
               Perc_Hispanic_Latino + 
               Perc_Hispanic_Latino_lag + 
               median_income +
               median_income_lag +
               perc_insured +
-              perc_insured_lag, 
+              perc_insured_lag + 
+              `2013 Urbanization`, 
             family="poisson",
             offset = log(Population),
             data=matrix_region,
@@ -816,6 +875,7 @@ melt_cor1 <- as.data.frame(matrix_region) %>%
   select(median_age,
          Perc_W_only,
          Perc_BA_only,
+         Perc_A_only,
          Perc_Hispanic_Latino,
          median_income,
          perc_insured) %>%
@@ -833,7 +893,7 @@ melt_cor1 %>%
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
         axis.text.y = element_text(angle = 45, vjust = 1, hjust = 1)) +
-  ggtitle("Correlation matrix, direct variables") + 
+  ggtitle("Correlation matrix, focal effects") + 
   xlab("") +
   ylab("")
 ```
@@ -843,6 +903,7 @@ melt_cor2 <- as.data.frame(matrix_region) %>%
   select(median_age_lag,
          Perc_W_only_lag,
          Perc_BA_only_lag,
+         Perc_A_only_lag,
          Perc_Hispanic_Latino_lag,
          median_income_lag,
          perc_insured_lag) %>%
@@ -860,7 +921,42 @@ melt_cor2 %>%
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
         axis.text.y = element_text(angle = 45, vjust = 1, hjust = 1)) +
-  ggtitle("Correlation matrix, direct/lagged variables") + 
+  ggtitle("Correlation matrix, lagged effects") + 
+  xlab("") +
+  ylab("")
+```
+
+```{r}
+melt_cor3 <- as.data.frame(matrix_region) %>%
+  select(median_age,
+         Perc_W_only,
+         Perc_BA_only,
+         Perc_A_only,
+         Perc_Hispanic_Latino,
+         median_income,
+         perc_insured,
+         median_age_lag,
+         Perc_W_only_lag,
+         Perc_BA_only_lag,
+         Perc_A_only_lag,
+         Perc_Hispanic_Latino_lag,
+         median_income_lag,
+         perc_insured_lag) %>%
+  cor() %>%
+  round(3) %>%
+  reshape2::melt()
+
+colnames(melt_cor3)
+
+melt_cor3 %>%
+  ggplot(aes(x=Var1, y=Var2, fill=value, label=value)) +
+  geom_tile() +
+  scale_fill_gradient2(low="red", mid="white", high="green") + 
+  geom_text(size=2) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+        axis.text.y = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  ggtitle("Correlation matrix, focal/lagged effects") + 
   xlab("") +
   ylab("")
 ```
@@ -883,7 +979,7 @@ length(model2$residuals)
 #Are the residuals being plotted correctly? 
 
 matrix_region <- matrix_region %>%
-  mutate("residuals1"=residuals.glm(model1, "pearson"))
+  mutate("residuals1"=residuals.glm(model1, "response"))
 
 matrix_region %>%
   ggplot() +
@@ -891,7 +987,7 @@ matrix_region %>%
   scale_fill_gradient2(low="white", high="red")
 
 matrix_region <- matrix_region %>%
-  mutate("residuals2"=residuals.glm(model2, "pearson"))
+  mutate("residuals2"=residuals.glm(model2, "response"))
 
 matrix_region %>% 
   ggplot() +
@@ -902,11 +998,268 @@ matrix_region <- matrix_region[is.na(matrix_region$residuals1)==FALSE,]
 nbrs_matrix_region_sp <- poly2nb(matrix_region, queen = TRUE)
 FFct_nb_w_test <- nb2listw(nbrs_matrix_region_sp,style="W", zero.policy = TRUE)
 
-cor8m2 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals1,order=15,method="I",style="W", zero.policy = TRUE)
-cor8m3 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals2,order=15,method="I",style="W", zero.policy = TRUE)
-plot(cor8m2,ylim=c(-0.1, 0.4),main="Residuals from model 1")
-plot(cor8m3,ylim=c(-0.1, 0.4),main="Residuals from model 2")
+moran_cor_m1 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals1,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m2 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals2,order=5,method="I",style="W", zero.policy = TRUE)
+plot(moran_cor_m1,ylim=c(-0.1, 0.4),main="Residuals from model 1")
+plot(moran_cor_m2,ylim=c(-0.1, 0.4),main="Residuals from model 2")
+```
 
+Checking to see if average of neighbors is used. *This could be a great way to explain the weighted matrix. The code used in this case study appears somewhat black box-ish. It's important to not only describe the programming, but what it's actually doing.*
+
+```{r}
+matrix_region <- matrix_region %>% mutate(ID=row_number())
+matrix_region %>% filter(GEOID==36047) %>% pull(median_income_lag)
+matrix_region %>% filter(GEOID==36047) %>% pull(ID)
+matrix_region %>% filter(ID %in% FFct_nb_w_test[[2]][[773]]) %>% select(median_income, GEOID) %>% summarise(average=mean(median_income))
+
+
+FFct_nb_w_test[[2]][[773]]
+#Code checks out! 
+```
+
+```{r}
+chi_square_model1 = sum(residuals(model1, type = "pearson")^2)
+
+degrees_freedom_model1 = model1$df.residual
+
+p_value_model1 = 1-pchisq(chi_square_model1, degrees_freedom_model1)
+
+paste("Pearson goodness of fit = ", round(chi_square_model1,2), ", df = ", degrees_freedom_model1, ", p-value = ", round(p_value_model1,10))
+```
+
+```{r}
+chi_square_model2 = sum(residuals(model2, type = "pearson")^2)
+
+degrees_freedom_model2 = model1$df.residual
+
+p_value_model2 = 1-pchisq(chi_square_model2, degrees_freedom_model2)
+
+paste("Pearson goodness of fit = ", round(chi_square_model2,2), ", df = ", degrees_freedom_model2, ", p-value = ", round(p_value_model2,10))
+```
+
+Both models show overdispersion. 
+
+```{r, error=TRUE}
+model1_nb <- glm.nb(Deaths ~ median_age +
+                      Perc_W_only +
+                      Perc_BA_only +
+                      Perc_A_only + 
+                      Perc_Hispanic_Latino + 
+              median_income +
+              perc_insured + 
+              `2013 Urbanization` + 
+              offset(log(Population)), 
+            data=matrix_region,
+            na.action = na.exclude)
+
+model2_nb <- glm.nb(Deaths ~ median_age + 
+              median_age_lag + 
+              Perc_W_only + 
+              Perc_W_only_lag +
+              Perc_BA_only + 
+              Perc_BA_only_lag + 
+              Perc_A_only +
+              Perc_A_only_lag + 
+              Perc_Hispanic_Latino + 
+              Perc_Hispanic_Latino_lag + 
+              median_income +
+              median_income_lag +
+              perc_insured +
+              perc_insured_lag +
+              `2013 Urbanization` +
+              offset(log(Population)),
+            data=matrix_region,
+            na.action = na.exclude)
+```
+
+```{r}
+matrix_region <- matrix_region %>%
+  mutate("residuals1nb"=residuals.glm(model1_nb, "response"))
+
+matrix_region %>%
+  ggplot() +
+  geom_sf(aes(fill=residuals1nb), color="transparent") + 
+  scale_fill_gradient2(low="green", mid="white" ,high="red")
+
+matrix_region <- matrix_region %>%
+  mutate("residuals2nb"=residuals.glm(model2_nb, "response"))
+
+matrix_region %>% 
+  ggplot() +
+  geom_sf(aes(fill=residuals2nb), color="transparent") + 
+  scale_fill_gradient2(low="green", mid="white", high="red")
+
+matrix_region <- matrix_region[is.na(matrix_region$residuals1nb)==FALSE,]
+nbrs_matrix_region_sp <- poly2nb(matrix_region, queen = TRUE)
+FFct_nb_w_test <- nb2listw(nbrs_matrix_region_sp,style="W", zero.policy = TRUE)
+
+moran_cor_m1nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals1nb,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m2nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals2nb,order=5,method="I",style="W", zero.policy = TRUE)
+
+par(mfrow=c(2,2))
+
+plot(moran_cor_m1,ylim=c(-0.05, 0.4),main="Residuals from model 1")
+plot(moran_cor_m2,ylim=c(-0.05, 0.4),main="Residuals from model 2")
+plot(moran_cor_m1nb,ylim=c(-0.05, 0.4),main="Residuals from model 1, nb")
+plot(moran_cor_m2nb,ylim=c(-0.05, 0.4),main="Residuals from model 2, nb")
+```
+
+We need to count for the spatial autocorrelation in our data. 
+
+```{r}
+model3 <- glm(Deaths ~ median_age + 
+              Perc_W_only + 
+              Perc_A_only +
+              Perc_Hispanic_Latino + 
+              median_income +
+              perc_insured + 
+              `2013 Urbanization`, 
+            family="poisson",
+            offset = log(Population),
+            data=matrix_region,
+            na.action = na.exclude)
+
+model4 <- glm(Deaths ~ median_age + 
+              median_age_lag + 
+              Perc_W_only + 
+              Perc_W_only_lag +
+              Perc_A_only + 
+              Perc_A_only_lag + 
+              Perc_Hispanic_Latino + 
+              Perc_Hispanic_Latino_lag + 
+              median_income +
+              median_income_lag +
+              perc_insured +
+              perc_insured_lag + 
+                `2013 Urbanization`, 
+            family="poisson",
+            offset = log(Population),
+            data=matrix_region,
+            na.action = na.exclude)
+```
+
+```{r}
+matrix_region <- matrix_region %>%
+  mutate("residuals3"=residuals.glm(model3, "response"))
+
+matrix_region <- matrix_region %>%
+  mutate("residuals4"=residuals.glm(model4, "response"))
+
+moran_cor_m3 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals3,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m4 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals4,order=5,method="I",style="W", zero.policy = TRUE)
+
+plot(moran_cor_m3,ylim=c(-0.1, 0.4),main="Residuals from model 3")
+plot(moran_cor_m4,ylim=c(-0.1, 0.4),main="Residuals from model 4")
+```
+
+Does the next set of models exhibit overdispersion?
+
+```{r}
+chi_square_model3 = sum(residuals(model3, type = "pearson")^2)
+
+degrees_freedom_model3 = model3$df.residual
+
+p_value_model3 = 1-pchisq(chi_square_model3, degrees_freedom_model3)
+
+paste("Pearson goodness of fit = ", round(chi_square_model3,2), ", df = ", degrees_freedom_model3, ", p-value = ", round(p_value_model3,10))
+```
+
+```{r}
+chi_square_model4 = sum(residuals(model4, type = "pearson")^2)
+
+degrees_freedom_model4 = model4$df.residual
+
+p_value_model4 = 1-pchisq(chi_square_model4, degrees_freedom_model4)
+
+paste("Pearson goodness of fit = ", round(chi_square_model4,2), ", df = ", degrees_freedom_model4, ", p-value = ", round(p_value_model4,10))
+```
+
+```{r, error=TRUE}
+model3_nb <- glm.nb(Deaths ~ median_age +
+                      Perc_W_only + 
+                      Perc_A_only + 
+                      Perc_Hispanic_Latino + 
+              median_income +
+              perc_insured + 
+              `2013 Urbanization` +
+                offset(log(Population)), 
+            data=matrix_region,
+            na.action = na.exclude)
+
+model4_nb <- glm.nb(Deaths ~ median_age + 
+              median_age_lag + 
+              Perc_W_only + 
+              Perc_W_only_lag + 
+              Perc_A_only + 
+              Perc_A_only_lag + 
+              Perc_Hispanic_Latino + 
+              Perc_Hispanic_Latino_lag + 
+              median_income +
+              median_income_lag +
+              perc_insured +
+              perc_insured_lag + 
+              `2013 Urbanization` +
+                offset(log(Population)),
+            data=matrix_region,
+            na.action = na.exclude)
+```
+
+```{r}
+vif(model3)
+vif(model4)
+vif(model3_nb)
+vif(model4_nb)
+```
+
+```{r}
+summary(model3)
+summary(model4)
+summary(model3_nb)
+summary(model4_nb)
+```
+
+```{r}
+matrix_region <- matrix_region %>%
+  mutate("residuals3nb"=residuals.glm(model3_nb, "response"))
+
+matrix_region <- matrix_region %>%
+  mutate("residuals4nb"=residuals.glm(model4_nb, "response"))
+
+moran_cor_m3nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals3nb,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m4nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals4nb,order=5,method="I",style="W", zero.policy = TRUE)
+
+par(mfrow=c(2,2))
+
+plot(moran_cor_m3,ylim=c(-0.05, 0.4),main="Residuals from model 3")
+plot(moran_cor_m4,ylim=c(-0.05, 0.4),main="Residuals from model 4")
+plot(moran_cor_m3nb,ylim=c(-0.05, 0.4),main="Residuals from model 3, nb")
+plot(moran_cor_m4nb,ylim=c(-0.05, 0.4),main="Residuals from model 4, nb")
+```
+
+```{r}
+cor_df <- as.data.frame(cbind(moran_cor_m1nb["res"][[1]][,1],
+      moran_cor_m2nb["res"][[1]][,1],
+      moran_cor_m3nb["res"][[1]][,1],
+      moran_cor_m4nb["res"][[1]][,1]
+      ))
+
+cor_df <- cor_df %>%
+  rename("model1nb"=V1,
+         "model2nb"=V2,
+         "model3nb"=V3,
+         "model4nb"=V4
+         ) %>%
+  mutate(lag=row_number())
+
+cor_df <- cor_df %>% gather(key=model, value=morans_i, -lag)
+
+cor_df %>%
+  ggplot(aes(x=lag, y=morans_i, color=model)) +
+  geom_point(size=2) + 
+  geom_line() + 
+  geom_hline(yintercept = 0, color="black") + 
+  ggtitle("Moran's I Correlogram by Model", subtitle = "Our models do not account for the spatial autocorrelation of our autocome.") + 
+  theme_OCS
 ```
 
 # Summary of results
@@ -953,3 +1306,7 @@ Universe: Total population  more information
 UCD Death Data—CDC Wonder
 https://wonder.cdc.gov/ucd-icd10.html
 
+
+pivot wide pivot longr in tidyr for reshape melt, change font theme
+
+reinforce weight matrix multiple to average--Leah Meeting 
