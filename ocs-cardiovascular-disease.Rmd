@@ -15,7 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-set.seed(999)
+set.seed(9999)
 ```
 
 # Details
@@ -67,9 +67,9 @@ We will be obtaining demographic and geographic information from the US Census B
 
 Our analysis will use demographic information from the American Community Survey, which functions similarly to the US Census, but is conducted yearly. 
 
-Two map files for this analysis will be considered. You can obtain these map files [here](https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.2017.html) and [here](https://www.census.gov/cgi-bin/geo/shapefiles/index.php). We will use the *2017 State, County, Minor Civil Division, and Incorporated Place FIPS Codes* provided [here](https://www.census.gov/geographies/reference-files/2017/demo/popest/2017-fips.html) to make identification of states and county more practical in our analysis. 
+Two map files for this analysis will be considered. You can obtain these map files [here](https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.2017.html) and [here](https://www.census.gov/cgi-bin/geo/shapefiles/index.php). We will use the *2017 State, County, Minor Civil Division, and Incorporated Place FIPS Codes* provided [here](https://www.census.gov/geographies/reference-files/2017/demo/popest/2017-fips.html) to make identification of states and counties more practical in our analysis. 
 
-Our second source of data is underlying cause of death data from CDC WONDER. Simply put, each death record contains separate sections for the underlying cause of death and all multiple causes of death. The CDC compiles then compiles information from these death records to create the respective datasets.
+Our second source of data is underlying cause of death data from CDC WONDER. Simply put, each death record contains separate sections for the underlying cause of death and all multiple causes of death. The CDC compiles information from these death records to create the respective datasets.
 
 The way we define deaths in our analysis is important to consider. We will be defining deaths with a cardiovascular disease listed as the underlying cause of death as a death as a result of a cardiovascular disease.
 
@@ -103,17 +103,19 @@ theme_OCS <- theme(axis.text = element_text(size = 10, color="black",family = "M
         plot.caption = element_text(size=8, family = "Menlo", color="black", hjust = 0))
 ```
 
+Let's import the data for this analysis. 
+
 ## United States county boundaries
 
-Let's import the United States county boundaries data. Note that we are importing two different files. We must determine which of the two files to use. These two files have different resolutions.
+We'll begin by importing the United States county boundaries data. Note that we are importing two different files. We must determine which of the two files to use. These two files have different resolutions.
 
 The spatial data format we will be using for our analysis is known as the shapefile format. Shapefiles are a file format originated by Esri, the developers of the popular ArcGIS. Shapefiles can store a wide array of spatial data and are the most widely used format for spatial data. 
 
-Using `reas_sf` by the `sf` package, we can read in the shapefiles for our analysis. 
+Using `read_sf` by the `sf` package, we can read in the shapefiles for our analysis. 
 
 ```{r}
 map_sf <- read_sf("cb_2017_us_county_20m/cb_2017_us_county_20m.shp")
-
+map_sf <- st_transform(map_sf, 2163)
 # Need to show source for this document
 
 map_sf_high_res <- read_sf("cb_2017_us_county_500k/cb_2017_us_county_500k.shp")
@@ -123,7 +125,7 @@ FIPS_codes <- read_excel("all-geocodes-v2017.xlsx")
 
 Let's compare the boundaries of each file. 
 
-If we plot the boundaries for the City of Baltimore (a county), we can see that there is substantially more detail in the larger of the two shapefiles. This could be useful when generating maps that are smaller in scale or when the resolution could impact an analysis.
+If we plot each, we can see that there is substantially more detail in the larger of the two shapefiles. This could be useful when generating maps that are smaller in scale or when the resolution could impact an analysis.
 
 ```{r, echo=FALSE, warning=FALSE}
 NY_shape <- map_sf %>% filter(STATEFP=="36" | STATEFP=="34" | STATEFP =="42")
@@ -132,28 +134,28 @@ NY_shape_high_res <- map_sf_high_res %>% filter(STATEFP=="36" | STATEFP=="34" | 
 #There are 58 counties in California. Since three are shown, a warning regarding the other 55 is shown. 
 
 NY_subset <- ggplot() +
-  geom_sf(data=NY_shape, color="blue", fill="transparent", size = 0.05) +
-  geom_sf(data=NY_shape_high_res, color="red", fill="transparent", size = 0.05) +
-  geom_sf_text(data=NY_shape_high_res, aes(label = NAME), size = 2) +
-  xlim(-74.45, -73.4) + 
-  ylim(40.1, 41.1) +
+  geom_sf(data=NY_shape, color="blue", fill="transparent", size = 0.5) +
+  geom_sf(data=NY_shape_high_res, color="red", fill="transparent", size = 0.5) +
+  geom_sf_text(data=NY_shape_high_res, aes(label = NAME), size = 2.5) +
+  xlim(2125000, 2175000) + 
+  ylim(-150000, -100000) +
   xlab("Longitude") +
   ylab("Latitude")+
   theme_void()
 ```
 
-With that said, if we zoom out enough, the two shapefiles appear almost identical.
+With that said, if we zoom out enough the two shapefiles are almost indiscernable from one another.
 
 ```{r, echo=FALSE, warning=FALSE}
-NY_NJ_PA <- ggplot() +
-  geom_sf(data=NY_shape, color="blue", fill="transparent", size = 0.05) +
-  geom_sf(data=NY_shape_high_res, color="red", fill="transparent", size = 0.05) + 
-  xlim(-80.5, -71.75) + 
-  ylim(38.75, 45.25) +
+NY_NJ_PA <- ggplot() + 
+  geom_sf(data=NY_shape, color="blue", fill="transparent", size = 0.1) +
+  geom_sf(data=NY_shape_high_res, color="red", fill="transparent", size = 0.1) +
+  xlim(1592058, 2303517) + 
+  ylim(-391238.6, 344335) +
   theme_void()
 
 arrowA <- data.frame(x1 = 28, x2 = 35, y1 = 22, y2 = 47)
-arrowB <- data.frame(x1 = 28, x2 = 35, y1 = 16, y2 = 3)
+arrowB <- data.frame(x1 = 28, x2 = 35, y1 = 18, y2 = 3)
 
 ggplot() +
     coord_equal(xlim = c(0, 70), ylim = c(0, 50), expand = FALSE) +
@@ -169,7 +171,7 @@ ggplot() +
 
 We see that for certain applications the use of the larger shapefile is not only warranted, but necessary. Conversely, for other applications the use of the larger shapefile is not necessary.
 
-Since we are not conducting an analysis that would have introduce bias or cause misclassification as a result of the shapefilefile we use, we are free to use the smaller of the two shapefiles. The smaller shapefile requires less computational resources and produces almost identical maps at the state level and beyond, making it ideal for getting through an analysis.
+Since we are not conducting an analysis that could introduce bias or cause misclassification as a result of the shapefilefile we use, we are free to use the smaller of the two shapefiles. The smaller shapefile requires less computational resources and produces almost identical maps at the state level and beyond, making it preferable for this analysis.
 
 Often, analyzing data thoroughly can be severely hindered by the computational resources available. This is especially true with spatial applications of R. Unless an analysis requires that those computational resources be used, it is often more efficient and effective to proceed with an analysis in a way that is less computationally-intensive.
 
@@ -213,6 +215,8 @@ Universe: Total population
 
 [Click here to be directed to the address for download](https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_B03002&prodType=table)
 
+These datasets will serve as predictors in the model we create. 
+
 ```{r}
 total_pop <- read_csv("ACS_17_5YR_B01003/ACS_17_5YR_B01003_with_ann.csv")
 
@@ -231,6 +235,8 @@ perc_insured <- read_csv("ACS_17_5YR_S2701/ACS_17_5YR_S2701_with_ann.csv")
 
 Let's import the underlying cause of death data. 
 
+This dataset will provide data for the counts in our Poisson regression model .
+
 ```{r}
 ucd_heart <- read_tsv("ucd_cardiovascular_diseases_county_2017.txt",
                       na = c("Suppressed","Unreliable", "Missing"))
@@ -245,61 +251,128 @@ We cannot wrangle a dataset for a specific purpose without first developing a cl
 
 The `head()` and `glimpse()` functions from the `utils` and `tidyverse` packages are particularly useful for that purpose. Each function has an advantage and disadvantage over the other. The `head()` function returns the first several rows of data; this output, while very easy to read for datasets with few dimensions, is too messy to interpret in the presence of more than a handful of columns of data. The `glimpse()` function returns the first several rows for each and every column of a dataframe; this output, while thorough, can generate a lot of output that is difficult to sift through.
 
-Rather than use one exclusively, we will use whichever is more beneficial for the dataset we are working with. 
+Rather than use one exclusively, we will use whichever is more beneficial for the dataset we are working with.
 
 Using the `dim()` function from `base`, we can make that determination. 
 
 If a function has few dimensions, we will use the `head()` function. If a function has more than 5 columns, we will use the `glimpse()` function. If a function too many dimensions to sift through reasonably, we will use regular expressions to identify our variable of interest. 
-
 ## ACS data
+
+We'll begin by wrangling the American Community Survey data. 
 
 ### Total population
 
+Let's prepare the dataset with the total population for each county. 
+
 ```{r}
 dim(total_pop)
+```
 
+This dataset has `r dim(total_pop)[2]` columns and `r dim(total_pop)[1]` rows. Given the small number of columns, it's more expedient to use the `head()` function to first visualize the dataframe. 
+
+```{r}
 head(total_pop)
+```
 
+A few things can be said about the dataframe from the above output. 
+
+The column names of this dataset correspond to a codebook and are difficult to interpret on their own. The first row of the dataframe uses more interpretable column names. In addition to this, not all the columns have information we need for our analysis.
+
+We need to obtain practical column names and keep the information we need, mainly the county and corresponding estimates. 
+
+Below we do just that. We used the first row to replace the column names. Then, we rid ourselves of unnecessary columns. Alternatively, we could have used the `select()` function by `dplyr`, a part of the `tidyverse`, to rid ourselves of the unnecessary columns.  
+
+```{r}
 colnames(total_pop) <- total_pop[1,]
 total_pop <- total_pop[-1,]
 total_pop$Id <- NULL
 total_pop$`Margin of Error; Total` <- NULL
+total_pop$Geography <- NULL
+```
+
+If we look at our dataframe now, each population estimate is coupled to a five digit code. Each US county has a unique identifier, called a FIPS code, that allows tabular data to be joined to spatial data. 
+
+```{r}
+head(total_pop)
+```
+
+Eventually, we will be joining this dataframe to our spatial data. Rather than join our tabular data based upon the name of each county, we will use this five digit code to join our tabular data to our spatial data. This avoids having to use regular expressions to make the names of counties parsimonious before joining, making such joins both more efficient and **accurate**. 
+
+*MICHAEL:LEAH* In the blurb above, I'm not sure if **accurate** is appropriate. Is there a word commonly used in data science that describes correctly attributing information to an observation/row. In much of the spatial work I've done, such joins are incredibly important. I think it'd be extremely beneficial here if we could highlight the importance of reference codes using data science language.
+
+For wrangling and regression analysis purposes, we need to rename our columns. Our other dataframes, also from the American Community Survey, will also use unique FIPS codes to refer to counties. 
+
+*MICHAEL*: there is a need to call this a FIPS code rather than GEOID. 
+
+```{r}
 total_pop <- total_pop %>%
   rename("GEOID"=Id2, "Population"=`Estimate; Total`)
 ```
 
 ### Median age
 
+Let's wrangle our dataset representing the median age of each county. 
+
 ```{r}
 dim(med_age)
+```
 
+This dataset, because of the number of columns it has (`r dim(med_age)[2]`), would be better examined with `glimpse()`. 
+
+```{r}
 glimpse(med_age)
+```
 
+Like the prior dataset, this dataset uses column names that correspond to a codebook. If we look closely, it appears that the first observation of each column, that is the first row, contains more practical names. Our wrangling approach is therefore pretty similar.
+
+```{r}
 colnames(med_age)
 colnames(med_age) <- med_age[1,]
 med_age <- med_age[-1,]
 med_age$Id <- NULL
 med_age <- med_age %>%
   rename("GEOID"=Id2, "median_age"=`Estimate; Median age -- - Total:`) %>%
-  select(GEOID, median_age)
+  dplyr::select(GEOID, median_age)
 class(med_age$median_age)
 med_age$median_age <- as.numeric(med_age$median_age)
 ```
 
 ### Race 
 
+By now, its apparent that each of the remaining datasets will require similar steps to wrangle. We should begin to think about creating a function that will help streamline the wrangling process. Such a function would take some time to create to ensure that it produces the output we intend.
+
+If we had to wrangle many similarly sourced datasets, this could make the wrangling process much more efficient and could save hours of work that could be spent directly analyzing the data. If done properly, such a function could actually prevent human error that commonly emerges when tasks that involve repitition.
+
+The problem with such a function is that knowledge of the steps involved in the wrangling process is required in advance. Without such knowledge, mistakes in our function could be compounded across our datasets. Since we only have a handful of datasets to wrangle, our time would be better spent manually wrangling each dataset. 
+
+The following dataset provides a great example of how a function is only as good as the foresight involved in its creation. 
+
+The dataset has `r dim(race)[2]` columns.
+
 ```{r}
 dim(race)
+```
 
+Using `glimpse()`, it becomes apparent that this dataset also uses impractical column names which could be made more practical with replacement by names included in the first row. 
+
+```{r}
 glimpse(race)
+```
 
+We replace the impractical column names with more practical column names.
+
+```{r}
 colnames(race)
 colnames(race) <- race[1,]
 race <- race[-1,]
 race$Id <- NULL
 ```
 
-```{r, error=TRUE}
+We need to create several predictors with information provided by this dataset. To do so, we'll use several `dplyr` verbs.
+
+Before getting into detail, note that the code below generates an error. 
+
+```{r, eval=FALSE}
 race <- race %>%
   rename("GEOID"=Id2,
          "Total"=`Estimate; Total:`,
@@ -309,16 +382,26 @@ race <- race %>%
   mutate(Perc_W_only=W_only/Total,
          Perc_BA_only=BA_only/Total,
          Perc_A_only=A_only/Total) %>%
-  select(GEOID,
+  dplyr::select(GEOID,
          Perc_W_only,
          Perc_BA_only,
          Perc_A_only)
+```
 
+If we check the class of each column, we find that each of the columns we treat numerically in the above code are of character class. 
+
+```{r}
 class(race$`Estimate; Total:`)
 class(race$`Estimate; Total: - White alone`)
 class(race$`Estimate; Total: - Black or African American alone`)
 class(race$`Estimate; Total: - Asian alone`)
+```
 
+Using the `mutate()` function, we can coerce these columns to `numeric` class. This lets us complete the calculations we originally intended. 
+
+Below we do just that. First, we rename the columns for practicality. Second, we coerce the columns to `numeric` class. Then, we calculate the predictors we'll be using for our regression analysis. Finally, we eliminate information that would not be relevant to our analysis with `select()`.
+
+```{r}
 race <- race %>%
   rename("GEOID"=Id2,
          "Total"=`Estimate; Total:`,
@@ -332,15 +415,19 @@ race <- race %>%
   mutate(Perc_W_only=W_only/Total,
          Perc_BA_only=BA_only/Total,
          Perc_A_only=A_only/Total) %>%
-  select(GEOID,
+  dplyr::select(GEOID,
          Perc_W_only,
          Perc_BA_only,
          Perc_A_only)
 ```
 
+While a function to wrangle our datasets could have been created to identify and deal with such issues, it could have only been done so with advanced knowledge of the problems that may emerge throughout the wrangling process. In the real world, such problems are often difficult or impossible to identify in advance. Such functions are therefore only useful in certain circumstances where the datasets involved are numerous and fairly similar in structure.
+
 ### Ethnicity
 
-```{r, error=TRUE}
+This next dataset follows a similar process. **MICHAEL** Explain further
+
+```{r}
 dim(ethnicity)
 
 glimpse(ethnicity)
@@ -349,14 +436,6 @@ colnames(ethnicity)
 colnames(ethnicity) <- ethnicity[1,]
 ethnicity <- ethnicity[-1,]
 ethnicity$Id <- NULL
-
-ethnicity <- ethnicity %>%
-  rename("GEOID"=Id2,
-         "Total"=`Estimate; Total:`,
-         "Hispanic_Latino"=`Estimate; Hispanic or Latino:`) %>%
-  mutate(Perc_Hispanic_Latino=Hispanic_Latino/Total) %>%
-  select(GEOID,
-         Perc_Hispanic_Latino)
 
 class(ethnicity$`Estimate; Total:`)
 class(ethnicity$`Estimate; Hispanic or Latino:`)
@@ -368,11 +447,13 @@ ethnicity <- ethnicity %>%
   mutate("Total"=as.numeric(Total),
          "Hispanic_Latino"=as.numeric(Hispanic_Latino)) %>%
   mutate(Perc_Hispanic_Latino=Hispanic_Latino/Total) %>%
-  select(GEOID,
+  dplyr::select(GEOID,
          Perc_Hispanic_Latino)
 ```
 
 ### Median income
+
+*MICHAEL* Must explain regular expression decisions. 
 
 ```{r}
 dim(med_inc)
@@ -397,7 +478,7 @@ colnames(med_inc)[which(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") &
 med_inc <- med_inc %>%
   rename("GEOID"=Id2,
          "median_income"=`Median income (dollars); Estimate; Households`) %>%
-  select(GEOID,
+  dplyr::select(GEOID,
          median_income)
 
 class(med_inc$median_income)
@@ -405,6 +486,8 @@ med_inc$median_income <- as.numeric(med_inc$median_income)
 ```
 
 ### Percent insured
+
+*MICHAEL* Must explain regular expression decisions. 
 
 ```{r}
 dim(perc_insured)
@@ -429,7 +512,7 @@ colnames(med_inc)[which(str_detect(colnames(med_inc), "Pp]ercent [Ii]nsured") &
 perc_insured <- perc_insured %>%
   rename("GEOID"=Id2,
          "perc_insured"=`Percent Insured; Estimate; Civilian noninstitutionalized population`) %>%
-  select(GEOID,
+  dplyr::select(GEOID,
          perc_insured)
 
 class(perc_insured$perc_insured)
@@ -437,6 +520,8 @@ perc_insured$perc_insured <- as.numeric(perc_insured$perc_insured)
 ```
 
 ## Underlying cause of death data
+
+*MICHAEL*: Must make decisions to use `NULL` clear. It seems as if these decisions are arbitrary. 
 
 ```{r}
 dim(ucd_heart)
@@ -464,13 +549,28 @@ ucd_heart$`2013 Urbanization` <- factor(ucd_heart$`2013 Urbanization`,
                   "Large Fringe Metro",
                   "Large Central Metro"),
        ordered = TRUE)
+
 levels(ucd_heart$`2013 Urbanization`)
+
+ucd_heart <- ucd_heart %>% mutate("2013 Urbanization Simplified"=fct_collapse(`2013 Urbanization`,
+               large_metro=c("Large Fringe Metro",
+                  "Large Central Metro"),
+               small_medium_metro=c("Small Metro",
+                  "Medium Metro"),
+               non_metro=c("NonCore (Nonmetro)",
+                  "Micropolitan (Nonmetro)")))
+
+#recode factors to simplify
 ```
 
 ## United States county boundaries
 
+*MICHAEL*: Why is EPSG 2163 used? 
+
 ```{r}
-map_sf <- st_transform(map_sf, 4326)
+st_crs(map_sf)
+
+map_sf <- st_transform(map_sf, 2163)
 
 dim(map_sf)
 
@@ -517,7 +617,7 @@ sapply(FIPS_codes[,1:(length(colnames(FIPS_codes))-1)], summary)
 colnames(FIPS_codes)
 
 FIPS_codes <- FIPS_codes %>%
-  select(`Summary Level`,
+  dplyr::select(`Summary Level`,
          `State Code (FIPS)`,
          `County Code (FIPS)`,
          `Area Name (including legal/statistical area description)`) %>%
@@ -538,13 +638,13 @@ FIPS_codes_dfs %>%
 state_codes <- FIPS_codes_dfs[[2]]
 glimpse(state_codes)
 state_codes <- state_codes %>%
-  select(state_code, area_name) %>%
+  dplyr::select(state_code, area_name) %>%
   rename("state_name"=area_name)
 glimpse(state_codes)
 county_codes <- FIPS_codes_dfs[[3]]
 glimpse(county_codes)
 county_codes <- county_codes %>%
-  select(-summary_level) %>%
+  dplyr::select(-summary_level) %>%
   rename("county_name"=area_name)
 
 # Mention how there is a heirarchy to these codes 
@@ -556,7 +656,6 @@ covariates <- county_codes %>%
   left_join(ethnicity, by="GEOID") %>%
   left_join(med_inc, by="GEOID") %>%
   left_join(perc_insured, by="GEOID")
-  
 ```
 
 *Now that we have the reference codes, we can update this section*
@@ -823,6 +922,7 @@ matrix_region <- matrix_region %>%
          )
 
 ```
+
 # Exploratory data analysis 
 
 We can explore our data in different ways now that we've merged our data to one of the maps we've imported. 
@@ -851,7 +951,58 @@ ggplot(subset) +
   theme_OCS
 ```
 
+```{r}
+st_crs(matrix_region)
+
+LC_metro1 <- matrix_region %>% filter(`2013 Urbanization`=="Large Central Metro") %>% mutate(index=row_number())
+
+st_agr(matrix_region) <- "constant"
+
+st_agr(LC_metro1) <- "constant"
+
+cen_dist_matrix <- st_distance(x=st_centroid(matrix_region), y=st_centroid(LC_metro1), "Great Circle")
+
+matrix_region <- matrix_region %>% mutate(cen_dist_m=apply(data.frame(cen_dist_matrix), 1,min),
+                         index=apply(cen_dist_matrix, 1, function(matrix_row) which(matrix_row==min(matrix_row))))
+
+LC_metro1 <- LC_metro1 %>% as.data.frame() %>% dplyr::select(index, county_name) %>% rename("nearest_LC_metro"=county_name)
+
+matrix_region <- matrix_region %>% left_join(LC_metro1, by="index")
+```
+
+*eval=FALSE*
+matrix_region <- matrix_region %>% mutate(index=st_nearest_feature(st_centroid(matrix_region), st_centroid(LC_metro1)))
+*chunk ends*
+
+Now that we have calculated all of our spatial covariates, we can remove counties that are not part of our region of interest. 
+
+```{r}
+matrix_region <- matrix_region %>% filter(Region =="Region of Interest")
+```
+
 # Data analysis 
+
+```{r}
+model0 <- glm(Deaths ~ 1, 
+            family="poisson",
+            offset = log(Population),
+            data=matrix_region,
+            na.action = na.exclude)
+
+matrix_region <- matrix_region %>%
+  mutate("residuals0"=residuals.glm(model0, "response"))
+
+matrix_region %>%
+  ggplot() +
+  geom_sf(aes(fill=residuals0), color="transparent") + 
+  scale_fill_gradient2(low="green", mid="white", high="red")
+
+matrix_region <- matrix_region[is.na(matrix_region$residuals0)==FALSE,]
+nbrs_matrix_region_sp <- poly2nb(matrix_region, queen = TRUE)
+FFct_nb_w_test <- nb2listw(nbrs_matrix_region_sp,style="W", zero.policy = TRUE)
+
+moran_cor_m0 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals0,order=5,method="I",style="W", zero.policy = TRUE)
+```
 
 ```{r}
 model1 <- glm(Deaths ~ median_age + 
@@ -894,7 +1045,7 @@ Let's produce some correlation matrices and compare them with computed variance 
 
 ```{r}
 melt_cor1 <- as.data.frame(matrix_region) %>%
-  select(median_age,
+  dplyr::select(median_age,
          Perc_W_only,
          Perc_BA_only,
          Perc_A_only,
@@ -922,7 +1073,7 @@ melt_cor1 %>%
 
 ```{r}
 melt_cor2 <- as.data.frame(matrix_region) %>%
-  select(median_age_lag,
+  dplyr::select(median_age_lag,
          Perc_W_only_lag,
          Perc_BA_only_lag,
          Perc_A_only_lag,
@@ -950,7 +1101,7 @@ melt_cor2 %>%
 
 ```{r}
 melt_cor3 <- as.data.frame(matrix_region) %>%
-  select(median_age,
+  dplyr::select(median_age,
          Perc_W_only,
          Perc_BA_only,
          Perc_A_only,
@@ -1003,7 +1154,7 @@ matrix_region <- matrix_region %>%
 matrix_region %>%
   ggplot() +
   geom_sf(aes(fill=residuals1), color="transparent") + 
-  scale_fill_gradient2(low="white", high="red")
+  scale_fill_gradient2(low="green", mid="white", high="red")
 
 matrix_region <- matrix_region %>%
   mutate("residuals2"=residuals.glm(model2, "response"))
@@ -1011,30 +1162,30 @@ matrix_region <- matrix_region %>%
 matrix_region %>% 
   ggplot() +
   geom_sf(aes(fill=residuals2), color="transparent") + 
-  scale_fill_gradient2(low="white", high="red")
+  scale_fill_gradient2(low="green", mid="white", high="red")
+
+moran_cor_m1 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals1,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m2 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals2,order=5,method="I",style="W", zero.policy = TRUE)
+plot(moran_cor_m1,ylim=c(-0.2, 0.4),main="Residuals from model 1")
+plot(moran_cor_m2,ylim=c(-0.2, 0.4),main="Residuals from model 2")
+```
 
 matrix_region <- matrix_region[is.na(matrix_region$residuals1)==FALSE,]
 nbrs_matrix_region_sp <- poly2nb(matrix_region, queen = TRUE)
 FFct_nb_w_test <- nb2listw(nbrs_matrix_region_sp,style="W", zero.policy = TRUE)
 
-moran_cor_m1 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals1,order=5,method="I",style="W", zero.policy = TRUE)
-moran_cor_m2 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals2,order=5,method="I",style="W", zero.policy = TRUE)
-plot(moran_cor_m1,ylim=c(-0.1, 0.4),main="Residuals from model 1")
-plot(moran_cor_m2,ylim=c(-0.1, 0.4),main="Residuals from model 2")
-```
-
 Checking to see if average of neighbors is used. *This could be a great way to explain the weighted matrix. The code used in this case study appears somewhat black box-ish. It's important to not only describe the programming, but what it's actually doing.*
 
-```{r}
+*This code does not work after the inclusion of code that removes surrounding states from the spatial data and was made no longer a chunk. An adaptation will be very helpful.*
+
 matrix_region <- matrix_region %>% mutate(ID=row_number())
 matrix_region %>% filter(GEOID==36047) %>% pull(median_income_lag)
 matrix_region %>% filter(GEOID==36047) %>% pull(ID)
-matrix_region %>% filter(ID %in% FFct_nb_w_test[[2]][[773]]) %>% select(median_income, GEOID) %>% summarise(average=mean(median_income))
+matrix_region %>% filter(ID %in% FFct_nb_w_test[[2]][[773]]) %>% dplyr::select(median_income, GEOID) %>% summarise(average=mean(median_income))
 
 
 FFct_nb_w_test[[2]][[773]]
 #Code checks out! 
-```
 
 ```{r}
 chi_square_model1 = sum(residuals(model1, type = "pearson")^2)
@@ -1058,7 +1209,7 @@ paste("Pearson goodness of fit = ", round(chi_square_model2,2), ", df = ", degre
 
 Both models show overdispersion. 
 
-```{r, error=TRUE}
+```{r}
 model1_nb <- glm.nb(Deaths ~ median_age +
                       Perc_W_only +
                       Perc_BA_only +
@@ -1113,19 +1264,15 @@ matrix_region %>%
   geom_sf(aes(fill=residuals2nb), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white", high="red")
 
-matrix_region <- matrix_region[is.na(matrix_region$residuals1nb)==FALSE,]
-nbrs_matrix_region_sp <- poly2nb(matrix_region, queen = TRUE)
-FFct_nb_w_test <- nb2listw(nbrs_matrix_region_sp,style="W", zero.policy = TRUE)
-
 moran_cor_m1nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals1nb,order=5,method="I",style="W", zero.policy = TRUE)
 moran_cor_m2nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals2nb,order=5,method="I",style="W", zero.policy = TRUE)
 
 par(mfrow=c(2,2))
 
-plot(moran_cor_m1,ylim=c(-0.05, 0.4),main="Residuals from model 1")
-plot(moran_cor_m2,ylim=c(-0.05, 0.4),main="Residuals from model 2")
-plot(moran_cor_m1nb,ylim=c(-0.05, 0.4),main="Residuals from model 1, nb")
-plot(moran_cor_m2nb,ylim=c(-0.05, 0.4),main="Residuals from model 2, nb")
+plot(moran_cor_m1,ylim=c(-0.2, 0.4),main="Residuals from model 1")
+plot(moran_cor_m2,ylim=c(-0.2, 0.4),main="Residuals from model 2")
+plot(moran_cor_m1nb,ylim=c(-0.2, 0.4),main="Residuals from model 1, nb")
+plot(moran_cor_m2nb,ylim=c(-0.2, 0.4),main="Residuals from model 2, nb")
 ```
 
 ```{r}
@@ -1164,14 +1311,21 @@ model4 <- glm(Deaths ~ median_age +
 matrix_region <- matrix_region %>%
   mutate("residuals3"=residuals.glm(model3, "response"))
 
+matrix_region %>%
+  ggplot() +
+  geom_sf(aes(fill=residuals3), color="transparent") + 
+  scale_fill_gradient2(low="green", mid="white" ,high="red")
+
 matrix_region <- matrix_region %>%
   mutate("residuals4"=residuals.glm(model4, "response"))
 
+matrix_region %>%
+  ggplot() +
+  geom_sf(aes(fill=residuals4), color="transparent") + 
+  scale_fill_gradient2(low="green", mid="white" ,high="red")
+
 moran_cor_m3 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals3,order=5,method="I",style="W", zero.policy = TRUE)
 moran_cor_m4 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals4,order=5,method="I",style="W", zero.policy = TRUE)
-
-plot(moran_cor_m3,ylim=c(-0.1, 0.4),main="Residuals from model 3")
-plot(moran_cor_m4,ylim=c(-0.1, 0.4),main="Residuals from model 4")
 ```
 
 Does the next set of models exhibit overdispersion?
@@ -1229,28 +1383,35 @@ model4_nb <- glm.nb(Deaths ~ median_age +
 ```{r}
 vif(model3_nb)
 vif(model4_nb)
-
 ```
 
 ```{r}
 matrix_region <- matrix_region %>%
   mutate("residuals3nb"=residuals.glm(model3_nb, "response"))
 
+matrix_region %>%
+  ggplot() +
+  geom_sf(aes(fill=residuals3nb), color="transparent") + 
+  scale_fill_gradient2(low="green", mid="white" ,high="red")
+
 matrix_region <- matrix_region %>%
   mutate("residuals4nb"=residuals.glm(model4_nb, "response"))
+
+matrix_region %>%
+  ggplot() +
+  geom_sf(aes(fill=residuals4nb), color="transparent") + 
+  scale_fill_gradient2(low="green", mid="white" ,high="red")
 
 moran_cor_m3nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals3nb,order=5,method="I",style="W", zero.policy = TRUE)
 moran_cor_m4nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals4nb,order=5,method="I",style="W", zero.policy = TRUE)
 
 par(mfrow=c(2,2))
 
-plot(moran_cor_m3,ylim=c(-0.05, 0.4),main="Residuals from model 3")
-plot(moran_cor_m4,ylim=c(-0.05, 0.4),main="Residuals from model 4")
-plot(moran_cor_m3nb,ylim=c(-0.05, 0.4),main="Residuals from model 3, nb")
-plot(moran_cor_m4nb,ylim=c(-0.05, 0.4),main="Residuals from model 4, nb")
+plot(moran_cor_m3,ylim=c(-0.2, 0.4),main="Residuals from model 3")
+plot(moran_cor_m4,ylim=c(-0.2, 0.4),main="Residuals from model 4")
+plot(moran_cor_m3nb,ylim=c(-0.2, 0.4),main="Residuals from model 3, nb")
+plot(moran_cor_m4nb,ylim=c(-0.2, 0.4),main="Residuals from model 4, nb")
 ```
-
-It looks like there may be residual spatial autocorrelation. 
 
 ```{r}
 model5 <- glm(Deaths ~ median_age + 
@@ -1273,6 +1434,11 @@ model5 <- glm(Deaths ~ median_age +
 
 matrix_region <- matrix_region %>%
   mutate("residuals5"=residuals.glm(model5, "response"))
+
+matrix_region %>%
+  ggplot() +
+  geom_sf(aes(fill=residuals5), color="transparent") + 
+  scale_fill_gradient2(low="green", mid="white" ,high="red")
 ```
 
 ```{r}
@@ -1285,7 +1451,7 @@ p_value_model5 = 1-pchisq(chi_square_model5, degrees_freedom_model5)
 paste("Pearson goodness of fit = ", round(chi_square_model5,2), ", df = ", degrees_freedom_model5, ", p-value = ", round(p_value_model5,10))
 ```
 
-```{r, error=TRUE}
+```{r}
 model5_nb <- glm.nb(Deaths ~ median_age + 
               median_age_lag2 + 
               Perc_W_only + 
@@ -1305,6 +1471,11 @@ model5_nb <- glm.nb(Deaths ~ median_age +
 
 matrix_region <- matrix_region %>%
   mutate("residuals5nb"=residuals.glm(model5_nb, "response"))
+
+matrix_region %>%
+  ggplot() +
+  geom_sf(aes(fill=residuals5nb), color="transparent") + 
+  scale_fill_gradient2(low="green", mid="white" ,high="red")
 ```
 
 ```{r}
@@ -1313,8 +1484,8 @@ moran_cor_m5nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_
 
 par(mfrow=c(1,2))
 
-plot(moran_cor_m5,ylim=c(-0.05, 0.4),main="Residuals from model 5")
-plot(moran_cor_m5nb,ylim=c(-0.05, 0.4),main="Residuals from model 5, nb")
+plot(moran_cor_m5,ylim=c(-0.2, 0.4),main="Residuals from model 5")
+plot(moran_cor_m5nb,ylim=c(-0.2, 0.4),main="Residuals from model 5, nb")
 ```
 
 ```{r}
@@ -1340,6 +1511,11 @@ model6 <- glm(Deaths ~ median_age +
 matrix_region <- matrix_region %>%
   mutate("residuals6"=residuals.glm(model6, "response"))
 
+matrix_region %>%
+  ggplot() +
+  geom_sf(aes(fill=residuals6), color="transparent") + 
+  scale_fill_gradient2(low="green", mid="white" ,high="red")
+
 moran_cor_m6 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals6,order=5,method="I",style="W", zero.policy = TRUE)
 ```
 
@@ -1353,23 +1529,19 @@ p_value_model6 = 1-pchisq(chi_square_model6, degrees_freedom_model6)
 paste("Pearson goodness of fit = ", round(chi_square_model6,2), ", df = ", degrees_freedom_model6, ", p-value = ", round(p_value_model6,10))
 ```
 
-```{r, error=TRUE}
-# no 2013 urbanization category, population_lag introduced
+```{r}
 #not the same as model6
 model6_nb <- glm.nb(Deaths ~ median_age + 
-              median_age_lag2 + 
+                      median_age_lag +
               Perc_W_only + 
-              Perc_W_only_lag2 + 
-              Perc_A_only + 
-              Perc_A_only_lag2 + 
-              Perc_Hispanic_Latino + 
-              Perc_Hispanic_Latino_lag2 + 
+              Perc_W_only_lag + 
               median_income +
-              median_income_lag2 +
+              median_income_lag + 
               perc_insured +
-              perc_insured_lag2 +
-                `2013 Urbanization` + 
-                Population_lag2 + 
+              perc_insured_lag +
+                cen_dist_m +
+                nearest_LC_metro +
+                `2013 Urbanization Simplified` + 
                 offset(log(Population)),
             data=matrix_region,
             na.action = na.exclude)
@@ -1377,10 +1549,32 @@ model6_nb <- glm.nb(Deaths ~ median_age +
 matrix_region <- matrix_region %>%
   mutate("residuals6nb"=residuals.glm(model6_nb, "response"))
 
+matrix_region %>%
+  ggplot() +
+  geom_sf(aes(fill=residuals6nb), color="transparent") + 
+  scale_fill_gradient2(low="green", mid="white" ,high="red")
+
 moran_cor_m6nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals6nb,order=5,method="I",style="W", zero.policy = TRUE)
 
-plot(moran_cor_m6,ylim=c(-0.05, 0.4),main="Residuals from model 6")
-plot(moran_cor_m6nb,ylim=c(-0.05, 0.4),main="Residuals from model 6, nb")
+plot(moran_cor_m6,ylim=c(-0.2, 0.4),main="Residuals from model 6")
+plot(moran_cor_m6nb,ylim=c(-0.2, 0.4),main="Residuals from model 6, nb")
+```
+
+```{r}
+matrix_region %>%
+  ggplot() +
+  geom_sf(aes(fill=cen_dist_m), color="transparent") + 
+  scale_fill_gradient2(low="white" ,high="black")
+```
+
+```{r}
+vif(model6_nb)
+```
+
+```{r}
+ggplot(matrix_region, aes(x=Population, y=residuals6nb, label=County, color=`2013 Urbanization`)) +
+  geom_point() + 
+  geom_text()
 ```
 
 ```{r}
@@ -1421,19 +1615,42 @@ cor_df %>%
   geom_line() + 
   geom_hline(yintercept = 0, color="black") + 
   ggtitle("Moran's I Correlogram by Model", subtitle = "Our models do not account for the spatial autocorrelation of our autocome.") + 
-  facet_grid(.~model)
+  facet_grid(.~model) + 
+  xlim(1,5) + 
+  ylim(-0.2,0.4) + 
   theme_OCS
 ```
 
+We need to be careful about over-interpreting correlograms, particularly when the degree of autocorrelation is very small. 
+
+We can test for autocorrelation globally by estimating the Moran's I statistic
+
 ```{r}
-moran.mc(matrix_region$residuals6nb, listw =FFct_nb_w_test,nsim = 999, zero.policy = TRUE)
+moran.mc(matrix_region$residuals6nb, listw =FFct_nb_w_test,nsim = 9999, zero.policy = TRUE)
 ```
+
+Our Moran's I statistic is close to 0 and is not significant. Our model appears to have accounted for residual spatial autocorrelation.
+
+Residual spatial autocorrelation can have a large impact on the usefulness of our model. Had we not accounted for it, our standard errors would have been underestimated, amongst other things. Ultimately, such behavior in the residuals is indicative of unaccounted for information in a model.
+
+matrix_region <- matrix_region %>%
+  mutate("residuals7nb"=residuals.glm(model7_nb, "response"))
+
+moran_cor_m7nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals7nb,order=5,method="I",style="W", zero.policy = TRUE)
+
+plot(moran_cor_m6nb,ylim=c(-0.2, 0.4),main="Residuals from model 6, nb")
+plot(moran_cor_m7nb,ylim=c(-0.2, 0.4),main="Residuals from model 7, nb")
+
+
+
+moran.mc(matrix_region$residuals6nb, listw =FFct_nb_w_test,nsim = 9999, zero.policy = TRUE)
+
 
 # Summary of results
 
 # Code garage
 
-```{r}
+```{r, eval=FALSE}
 tm_shape(subset) +
 	tm_polygons(c("Deaths", "Population", "Crude Rate", "2013 Urbanization"),
 				style=c("pretty","pretty","pretty", "pretty"), breaks=list(NULL, NULL, NULL, NULL),
@@ -1477,3 +1694,12 @@ https://wonder.cdc.gov/ucd-icd10.html
 pivot wide pivot longr in tidyr for reshape melt, change font theme
 
 reinforce weight matrix multiple to average--Leah Meeting 
+
+check for truncation effect of urban centers
+
+explanation of edge vs centroid.
+
+
+# Further Reading
+
+[Residual spatial autocorrelation in macroecological and biogeographical modeling: a review](https://link.springer.com/article/10.1186/s41610-019-0118-3)
