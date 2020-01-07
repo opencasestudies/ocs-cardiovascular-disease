@@ -425,7 +425,9 @@ While a function to wrangle our datasets could have been created to identify and
 
 ### Ethnicity
 
-This next dataset follows a similar process. **MICHAEL** Explain further
+This next dataset follows a similar process. Data from the American Community Survey is very well maintained and has technical documentation. The similarity in the wrangling process is a result of the similarity in the way the datasets are organized. 
+
+Using a similar wrangling process, we make the column names more practical and then calculate predictors that will be used in our regression analysis.
 
 ```{r}
 dim(ethnicity)
@@ -453,28 +455,65 @@ ethnicity <- ethnicity %>%
 
 ### Median income
 
-*MICHAEL* Must explain regular expression decisions. 
+The next couple of datasets, while from the American Community Survey, would be even more difficult to wrangle effectively with a function. 
+
+The wrangling process for this dataset, which will eventually represent the median income of each county, is much more complex. 
+
+The dataset has `r dim(med_inc)[2]` columns. This is far too many columns to sift through efficiently or effectively. 
 
 ```{r}
 dim(med_inc)
+```
 
+We need to learn a bit more about this dataset before we can continue. 
+
+Like our prior ACS datasets, the first 50 columns appear to pertain to a codebook.
+
+```{r}
 colnames(med_inc)[1:50]
+```
 
+The first row appears to have more practical column names.
+
+```{r}
 head(med_inc)
+```
 
+We substitute the impractical column names with more practical column names. 
+
+```{r}
 colnames(med_inc) <- med_inc[1, ]
-
 med_inc <- med_inc[-1,]
 med_inc$Id <- NULL
+```
 
+Now that we have practical column names, we can use regular expressions to search through the `dim(med_inc)[2]` columns. 
+
+`str_detect()` returns a logical vector, with a value of `TRUE` being returned for specified patterns found within a string. `R` can sum these `TRUE` values. This sum gives a count of how many values satisfied the logical statement. 
+
+We can use this to determine which patterns are most successful at narrowing down our search. 
+
+By condititioning on two statements, we are able to reduce the `r dim(med_inc)[2]` columns to `r sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & str_detect(colnames(med_inc),"[Ee]stimate"))`. 
+
+**Michael**: Explain pattern used. 
+
+```{r}
 sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome"))
 sum(str_detect(colnames(med_inc), "[Ee]stimate"))
 sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") &
       str_detect(colnames(med_inc),"[Ee]stimate"))
+```
 
+We can then determine what these`r sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & str_detect(colnames(med_inc),"[Ee]stimate"))` column are. 
+
+```{r}
 colnames(med_inc)[which(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & 
                           str_detect(colnames(med_inc), "[Ee]stimate"))]
+```
 
+From here we can determine which columns we need and proceed as we did with the prior datasets.
+
+```{r}
 med_inc <- med_inc %>%
   rename("GEOID"=Id2,
          "median_income"=`Median income (dollars); Estimate; Households`) %>%
