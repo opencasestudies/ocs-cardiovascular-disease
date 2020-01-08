@@ -495,7 +495,11 @@ We can use this to determine which patterns are most successful at narrowing dow
 
 By condititioning on two statements, we are able to reduce the `r dim(med_inc)[2]` columns to `r sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & str_detect(colnames(med_inc),"[Ee]stimate"))`. 
 
-**Michael**: Explain pattern used. 
+Below we used brackets around letters to denote that the pattern could include either a capital or lowercase letter. 
+
+From the first 50 columns we looked at, it becomes apparent that there are three key words that may be particularly useful: [Mmedian], [Ii]ncome, and [Ee]stimate. We can use either of these words or condition on both to search for relevant columns. 
+
+Let's count the number of column names that contain each patter. Eventually, we want to be able to extract those column names, meaning we want a number small enough to sift through but large enough to not be impractical.
 
 ```{r}
 sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome"))
@@ -504,7 +508,7 @@ sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") &
       str_detect(colnames(med_inc),"[Ee]stimate"))
 ```
 
-We can then determine what these`r sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & str_detect(colnames(med_inc),"[Ee]stimate"))` column are. 
+`r sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & str_detect(colnames(med_inc),"[Ee]stimate"))` columns is a promising amount of column names to sift through. We can determine what these`r sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & str_detect(colnames(med_inc),"[Ee]stimate"))` columns are using the `which()` function. 
 
 ```{r}
 colnames(med_inc)[which(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & 
@@ -513,20 +517,38 @@ colnames(med_inc)[which(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") &
 
 From here we can determine which columns we need and proceed as we did with the prior datasets.
 
+We will use the following column as a predictor. 
+
 ```{r}
+colnames(med_inc)[which(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & 
+                          str_detect(colnames(med_inc), "[Ee]stimate"))][1]
+```
+
+We can save the name of this column to an object and then use that object in conjunction with the `paste()` function in dplyr verbs.
+
+```{r}
+median_income_column <- colnames(med_inc)[which(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & 
+                          str_detect(colnames(med_inc), "[Ee]stimate"))][1]
+
 med_inc <- med_inc %>%
   rename("GEOID"=Id2,
-         "median_income"=`Median income (dollars); Estimate; Households`) %>%
+         "median_income"=paste(median_income_column)) %>%
   dplyr::select(GEOID,
          median_income)
+```
 
+After checking the resulting class of our predictor, we coerce it to numeric class.
+
+```{r}
 class(med_inc$median_income)
 med_inc$median_income <- as.numeric(med_inc$median_income)
 ```
 
 ### Percent insured
 
-*MICHAEL* Must explain regular expression decisions. 
+The last dataset we wrangle by the American Community Survey follows a similar process.  
+
+After checking the dimensions of the dataset, we introduce more practical column names, use regular expressions to sift through numerous columns, and extract that column for use in our analysis. 
 
 ```{r}
 dim(perc_insured)
@@ -545,12 +567,15 @@ sum(str_detect(colnames(perc_insured), "[Ee]stimate"))
 sum(str_detect(colnames(perc_insured), "[Pp]ercent [Ii]nsured") &
       str_detect(colnames(perc_insured),"[Ee]stimate"))
 
-colnames(med_inc)[which(str_detect(colnames(med_inc), "Pp]ercent [Ii]nsured") & 
-                          str_detect(colnames(med_inc), "[Ee]stimate"))]
+colnames(perc_insured)[which(str_detect(colnames(perc_insured), "[Pp]ercent [Ii]nsured") & 
+                          str_detect(colnames(perc_insured), "[Ee]stimate"))]
+
+percent_insured_column <- colnames(perc_insured)[which(str_detect(colnames(perc_insured), "[Pp]ercent [Ii]nsured") & 
+                          str_detect(colnames(perc_insured), "[Ee]stimate"))][1]
 
 perc_insured <- perc_insured %>%
   rename("GEOID"=Id2,
-         "perc_insured"=`Percent Insured; Estimate; Civilian noninstitutionalized population`) %>%
+         "perc_insured"=paste(percent_insured_column)) %>%
   dplyr::select(GEOID,
          perc_insured)
 
@@ -562,23 +587,39 @@ perc_insured$perc_insured <- as.numeric(perc_insured$perc_insured)
 
 *MICHAEL*: Must make decisions to use `NULL` clear. It seems as if these decisions are arbitrary. 
 
+Let's wrangle the mortality data. 
+
 ```{r}
 dim(ucd_heart)
 
 glimpse(ucd_heart)
+```
 
+The crude rate included in the mortality data is calculated by dividing the number of deaths by a population that differs from that of the actual population of each county. For crude rates, the Centers for Disease Control exludes certain members of the population. We will be including all members of the population as an offset in our regression analysis using data from the American Community Survey, meaning we can get rid of the population estimates and crude rates provided in the dataset.
+
+```{r}
 ucd_heart$Notes <- NULL
 ucd_heart$Population <- NULL
 ucd_heart$`Crude Rate` <- NULL
+```
+
+We then coerce the urbanization categories to a `factor` class. 
+
+```{r}
+
+class(ucd_heart$`2013 Urbanization`)
 ucd_heart$`2013 Urbanization` <- as.factor(ucd_heart$`2013 Urbanization`)
 glimpse(ucd_heart)
 ```
 
 *According to [this](https://www.cdc.gov/nchs/data/series/sr_02/sr02_166.pdf) document, the ordering should be something along these lines*
 
+We rename the five digit reference codes and order the urbanization categories. 
+
 ```{r}
 ucd_heart <- ucd_heart %>%
   rename("GEOID"=`County Code`)
+
 levels(ucd_heart$`2013 Urbanization`)
 ucd_heart$`2013 Urbanization` <- factor(ucd_heart$`2013 Urbanization`,
        levels = c("NonCore (Nonmetro)",
@@ -590,7 +631,11 @@ ucd_heart$`2013 Urbanization` <- factor(ucd_heart$`2013 Urbanization`,
        ordered = TRUE)
 
 levels(ucd_heart$`2013 Urbanization`)
+```
 
+We then collapse the categories we created. This will allow us visualize the categories in another way should the original categories be too noisy. 
+
+```{r}
 ucd_heart <- ucd_heart %>% mutate("2013 Urbanization Simplified"=fct_collapse(`2013 Urbanization`,
                large_metro=c("Large Fringe Metro",
                   "Large Central Metro"),
@@ -598,18 +643,18 @@ ucd_heart <- ucd_heart %>% mutate("2013 Urbanization Simplified"=fct_collapse(`2
                   "Medium Metro"),
                non_metro=c("NonCore (Nonmetro)",
                   "Micropolitan (Nonmetro)")))
-
-#recode factors to simplify
 ```
 
 ## United States county boundaries
 
 *MICHAEL*: Why is EPSG 2163 used? 
 
+Recall that we transformed the spatial data as soon as the data was imported. This is considered good practice. Depending on the projection of the spatial data, not doing so could have unintended consequences on the analysis.
+
+We transformed the spatial data to the *US National Atlas Equal Area* projection. This projection does a good job of representing the size of states. Some projections, such as the popular Mercator projection, make areas near the north and south poles appear disproportionately larger than areas further away. 
+
 ```{r}
 st_crs(map_sf)
-
-map_sf <- st_transform(map_sf, 2163)
 
 dim(map_sf)
 
@@ -1672,20 +1717,9 @@ Our Moran's I statistic is close to 0 and is not significant. Our model appears 
 
 Residual spatial autocorrelation can have a large impact on the usefulness of our model. Had we not accounted for it, our standard errors would have been underestimated, amongst other things. Ultimately, such behavior in the residuals is indicative of unaccounted for information in a model.
 
-matrix_region <- matrix_region %>%
-  mutate("residuals7nb"=residuals.glm(model7_nb, "response"))
-
-moran_cor_m7nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals7nb,order=5,method="I",style="W", zero.policy = TRUE)
-
-plot(moran_cor_m6nb,ylim=c(-0.2, 0.4),main="Residuals from model 6, nb")
-plot(moran_cor_m7nb,ylim=c(-0.2, 0.4),main="Residuals from model 7, nb")
-
-
-
-moran.mc(matrix_region$residuals6nb, listw =FFct_nb_w_test,nsim = 9999, zero.policy = TRUE)
-
-
 # Summary of results
+
+Our model was able to account for residual spatial autocorrelation. 
 
 # Code garage
 
@@ -1737,7 +1771,6 @@ reinforce weight matrix multiple to average--Leah Meeting
 check for truncation effect of urban centers
 
 explanation of edge vs centroid.
-
 
 # Further Reading
 
