@@ -14,22 +14,21 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
-set.seed(9999)
-```
-
 # Details
 
 + Use the US Census Bureau's definition of the Northeast: [click here](https://www.wikiwand.com/en/Northeastern_United_States)
-+ Fix the hole with missing data in our shapefile. Look at prior poster for relevant code. 
-    + Shannon County (GEOID 46113) is now known as Oglala Lakota (GEOID 46102).
-    + Wade Hamptom (GEOID 02270) is now known as Kusilvak (GEOID 02158).
-+ Use 2017 data ACS CDC WONDER
-+ check for correlation between covariates 
 + Next year, the US Census website—and not American FactFinder—will host the demographic data used for this case study.
 + Consider wrangling FIPS excel sheet found online
-+ Reorder urbanization categories to correctly reflect "rural-ness."
-+ Use head() or glimpse according to dim() output
+
+pivot wide pivot longr in tidyr for reshape melt, change font theme
+
+reinforce weight matrix multiple to average--Leah Meeting 
+
+check for truncation effect of urban centers
+
+explanation of edge vs centroid.
+
+convert dist covariate to km 
 
 # Motivation
 
@@ -73,7 +72,7 @@ Our second source of data is underlying cause of death data from CDC WONDER. Sim
 
 The way we define deaths in our analysis is important to consider. We will be defining deaths with a cardiovascular disease listed as the underlying cause of death as a death as a result of a cardiovascular disease.
 
-Not all deaths have a single, direct cause. For that very reason, all multiple causes of death are listed on death records. We've defined our cases in such a way to simplify our analysis and ensure that the cases we include in our study are the cases most likely to have died as a direct result from a cardiovascular disease. This is particularly important given the high prevalence of cardiovascular diseases.
+Not all deaths have a single, direct cause. For that very reason, multiple causes of death are listed on death records. We've defined our cases in such a way to simplify our analysis and ensure that the cases we include in our study are the cases most likely to have died as a direct result from a cardiovascular disease. This is particularly important given the high prevalence of cardiovascular diseases.
 
 The CDC's Wide-ranging ONline Data for Epidemiologic Research (WONDER) is a resource for a wide array of datasets surrounding the population health of the United States. There, you can find underlying cause of death data, which can be grouped by other characteristics such as sex, year, geographic region, and more. We will be examining diseases of the heart. These can be obtained using the following UCD-10 codes [here](https://wonder.cdc.gov/ucd-icd10.html):
 
@@ -105,21 +104,26 @@ theme_OCS <- theme(axis.text = element_text(size = 10, color="black",family = "M
 
 Let's import the data for this analysis. 
 
-## United States county boundaries
+## Boundaries and Reference Codes
 
 We'll begin by importing the United States county boundaries data. Note that we are importing two different files. We must determine which of the two files to use. These two files have different resolutions.
 
 The spatial data format we will be using for our analysis is known as the shapefile format. Shapefiles are a file format originated by Esri, the developers of the popular ArcGIS. Shapefiles can store a wide array of spatial data and are the most widely used format for spatial data. 
 
 Using `read_sf` by the `sf` package, we can read in the shapefiles for our analysis. 
+*MICHAEL*: Need to show source for this document
 
 ```{r}
 map_sf <- read_sf("cb_2017_us_county_20m/cb_2017_us_county_20m.shp")
 map_sf <- st_transform(map_sf, 2163)
-# Need to show source for this document
 
 map_sf_high_res <- read_sf("cb_2017_us_county_500k/cb_2017_us_county_500k.shp")
+map_sf_high_res <- st_transform(map_sf_high_res, 2163)
+```
 
+In addition to the shapefiles, we will import reference codes so that we can identify areas efficiently. We'll discuss in more detail later why having reference codes in datasets is helpful when dealing with spatial data. 
+
+```{r}
 FIPS_codes <- read_excel("all-geocodes-v2017.xlsx")
 ```
 
@@ -154,7 +158,7 @@ NY_NJ_PA <- ggplot() +
   ylim(-391238.6, 344335) +
   theme_void()
 
-arrowA <- data.frame(x1 = 28, x2 = 35, y1 = 22, y2 = 47)
+arrowA <- data.frame(x1 = 28, x2 = 35, y1 = 23, y2 = 47)
 arrowB <- data.frame(x1 = 28, x2 = 35, y1 = 18, y2 = 3)
 
 ggplot() +
@@ -181,41 +185,73 @@ Again, because our analysis is not dependent on the absolute precision of the ma
 
 Let's import the following datasets for 2017: 
 
+---
+
 TOTAL POPULATION
-Universe: Total population  more information
+
+B01003
+
 2013-2017 American Community Survey 5-Year Estimates
 
 [Click here to be directed to the address for download](https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_B01003&prodType=table)
 
+---
+
 SELECTED CHARACTERISTICS OF HEALTH INSURANCE COVERAGE IN THE UNITED STATES
+
+S2701
+
 2013-2017 American Community Survey 5-Year Estimates
 
 [Click here to be directed to the address for download](https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_S2701&prodType=table)
 
+---
+
+
 MEDIAN INCOME IN THE PAST 12 MONTHS (IN 2017 INFLATION-ADJUSTED DOLLARS)
+
+S1903
+
 2013-2017 American Community Survey 5-Year Estimates
 
 [Click here to be directed to the address for download](https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_S1903&prodType=table)
 
+---
+
 MEDIAN AGE BY SEX
-Universe: Total population
+
+B01002
+
 2013-2017 American Community Survey 5-Year Estimates
 
 [Click here to be directed to the address for download](https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_B01002&prodType=table)
 
+---
+
+
 RACE
-Universe: Total population
+
+B02001
+
 2013-2017 American Community Survey 5-Year Estimates
 
 [Click here to be directed to the address for download](https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_B02001&prodType=table)
 
+---
+
 HISPANIC OR LATINO ORIGIN BY RACE
-Universe: Total population
+
+B03002
+
 2013-2017 American Community Survey 5-Year Estimates
 
 [Click here to be directed to the address for download](https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_B03002&prodType=table)
 
+---
+
 These datasets will serve as predictors in the model we create. 
+
+**MICHAEL** These need to be ordered properly. 
 
 ```{r}
 total_pop <- read_csv("ACS_17_5YR_B01003/ACS_17_5YR_B01003_with_ann.csv")
@@ -341,10 +377,9 @@ med_age$median_age <- as.numeric(med_age$median_age)
 
 By now, its apparent that each of the remaining datasets will require similar steps to wrangle. We should begin to think about creating a function that will help streamline the wrangling process. Such a function would take some time to create to ensure that it produces the output we intend.
 
-If we had to wrangle many similarly sourced datasets, this could make the wrangling process much more efficient and could save hours of work that could be spent directly analyzing the data. If done properly, such a function could actually prevent human error that commonly emerges when tasks that involve repitition.
+If we had to wrangle many similarly sourced datasets, this could make the wrangling process much more efficient and could save hours of work that could be spent directly analyzing the data. If done properly, such a function could actually prevent human error that commonly emerges with tasks that require repitition.
 
 The problem with such a function is that knowledge of the steps involved in the wrangling process is required in advance. Without such knowledge, mistakes in our function could be compounded across our datasets. Since we only have a handful of datasets to wrangle, our time would be better spent manually wrangling each dataset. 
-
 The following dataset provides a great example of how a function is only as good as the foresight involved in its creation. 
 
 The dataset has `r dim(race)[2]` columns.
@@ -372,7 +407,7 @@ We need to create several predictors with information provided by this dataset. 
 
 Before getting into detail, note that the code below generates an error. 
 
-```{r, eval=FALSE}
+```{r, error=TRUE}
 race <- race %>%
   rename("GEOID"=Id2,
          "Total"=`Estimate; Total:`,
@@ -647,7 +682,7 @@ ucd_heart <- ucd_heart %>% mutate("2013 Urbanization Simplified"=fct_collapse(`2
 
 ## United States county boundaries
 
-*MICHAEL*: Why is EPSG 2163 used? 
+*MICHAEL*: Why is EPSG 2163 used? Need to explain EPSG 
 
 Recall that we transformed the spatial data as soon as the data was imported. This is considered good practice. Depending on the projection of the spatial data, not doing so could have unintended consequences on the analysis.
 
@@ -779,10 +814,13 @@ subset <- map_sf %>%
 ```{r}
 contiguous_us <- map_sf %>% filter(!(STATEFP %in% c("02", #Alaska
                                                     "15", #Hawaii
-                                                    "72")))
+                                                    "72" #Puerto Rico
+                                                    )))
 ```
 
 ## Lag Covariates
+
+**MICHAEL** This entire section needs to be checked. Changes were made to ensure that there was no trunctating effect on the analysis. 
 
 We need to construct the neighborhood matrix in a way that does includes all the relationships between counties of interest, otherwise we will lose valuable information and could bias our results.
 
@@ -791,49 +829,30 @@ Let's create a neighborhood matrix that includes counties just outside of our re
 Five states border our region of interest. Let's include them in our neighborhood matrix.
 
 ```{r}
-# "" around numbers for the same reason as mentioned before
-
-surrounding_states <- c("37", #NC
-                        "47", #TN
-                        "21", #KY
-                        "18", #IN
-                        "26" #MI
-                        )
-
-matrix_counties <- c(state_fp, surrounding_states)
-
-matrix_region <- map_sf %>%
-  filter(STATEFP %in% matrix_counties)
-
-matrix_region <- matrix_region %>%
-  mutate(Region = ifelse(STATEFP %in% state_fp, "Region of Interest", "Surrounding States"))
-
+us_cvd_sp_data <- contiguous_us
 ```
 
-Let's look at what we did visually. 
-
 ```{r}
-ggplot(matrix_region) + 
-  geom_sf(aes(fill=Region))
+ucd_cvd_sp_data <- us_cvd_sp_data %>%
+  filter(!is.na(Deaths))
 ```
 
 ```{r}
 # Would be neat to give an example of queen's vs rook's case matrices
-matrix_region_sp <- as(matrix_region, 'Spatial')
-nbrs_matrix_region_sp <- poly2nb(matrix_region_sp, queen = TRUE)
-neighbors_sf <- as(nb2lines(nbrs_matrix_region_sp, coords = coordinates(matrix_region_sp)), 'sf')
-neighbors_sf <- st_set_crs(neighbors_sf, st_crs(matrix_region))
+us_cvd_sp_data_sp <- as(us_cvd_sp_data, 'Spatial')
+nbrs_us_cvd_sp_data_sp <- poly2nb(us_cvd_sp_data_sp, queen = TRUE)
+neighbors_sf <- as(nb2lines(nbrs_us_cvd_sp_data_sp, coords = coordinates(us_cvd_sp_data_sp)), 'sf')
+neighbors_sf <- st_set_crs(neighbors_sf, st_crs(us_cvd_sp_data))
 ```
 
 ```{r}
-ggplot(matrix_region) + 
-  geom_sf(aes(fill = Region), color=NA) +
+ggplot(us_cvd_sp_data) +
   geom_sf(data = neighbors_sf, size=0.25, color="black") +
-  ggtitle("Neighborhood Matrix", subtitle = "Queen's Case Adjacency")
+  ggtitle("Neighborhood Matrix", subtitle = "Queen's Case Adjacency") +
+  theme_minimal()
 ```
 
 #### Smoothing
-
 
 With this matrix, we can create smoothed maps. Smoothing is the process of borrowing information from surrounding area-level units to create values with less variation.
 
@@ -848,12 +867,12 @@ Below we create a first order lagged variable.
 ```{r}
 # First order lag
 
-FFct_nb_w <- nb2listw(nbrs_matrix_region_sp,style="W", zero.policy = TRUE)
+FFct_nb_w <- nb2listw(nbrs_us_cvd_sp_data_sp,style="W", zero.policy = TRUE)
 Wfull<-listw2mat(FFct_nb_w)
 
-matrix_region$smoothed_pop <- Wfull %*% matrix_region$Population
+us_cvd_sp_data$smoothed_pop <- Wfull %*% us_cvd_sp_data$Population
 
-ggplot(matrix_region) +
+ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=smoothed_pop)) +
   scale_fill_gradientn(colours = viridis(10))
 ```
@@ -865,15 +884,15 @@ The process for creating a second order lagged variable, and so on, is the same.
 ```{r}
 # Second order lag 
 
-nb_sec_lag_list <- nblag(nbrs_matrix_region_sp, maxlag = 2)
+nb_sec_lag_list <- nblag(nbrs_us_cvd_sp_data_sp, maxlag = 2)
 nb_sec_lag <- nb_sec_lag_list[[2]]
 
 FFct_nb_w <- nb2listw(nb_sec_lag,style="W", zero.policy = TRUE)
 Wfull<-listw2mat(FFct_nb_w)
 
-matrix_region$smoothed_pop_sec_order <- Wfull %*% matrix_region$Population
+us_cvd_sp_data$smoothed_pop_sec_order <- Wfull %*% us_cvd_sp_data$Population
 
-ggplot(matrix_region) +
+ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=smoothed_pop_sec_order)) +
   scale_fill_gradientn(colours = viridis(10))
 ```
@@ -881,7 +900,6 @@ ggplot(matrix_region) +
 We can also combine combine information from the nearest and next nearest adjacent area-level units. 
 
 The code below uses the list of first and second order adjacent counties to do exactly that. 
-
 ```{r}
 # Cumulative 1st and 2nd order
 nb_cum_lag <- nblag_cumul(nb_sec_lag_list)
@@ -889,9 +907,9 @@ nb_cum_lag <- nblag_cumul(nb_sec_lag_list)
 FFct_nb_w <- nb2listw(nb_cum_lag,style="W", zero.policy = TRUE)
 Wfull<-listw2mat(FFct_nb_w)
 
-matrix_region$smoothed_pop_cum_order <- Wfull %*% matrix_region$Population
+us_cvd_sp_data$smoothed_pop_cum_order <- Wfull %*% us_cvd_sp_data$Population
 
-ggplot(matrix_region) +
+ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=smoothed_pop_cum_order)) +
   scale_fill_gradientn(colours = viridis(10))
 ```
@@ -905,15 +923,15 @@ The end product is a map with much less variation.
 ```{r}
 # Extreme case
 
-nb_ext_lag_list <- nblag(nbrs_matrix_region_sp, maxlag = 10)
+nb_ext_lag_list <- nblag(nbrs_us_cvd_sp_data_sp, maxlag = 10)
 nb_ext_cum_lag <- nblag_cumul(nb_ext_lag_list)
 
 FFct_nb_w <- nb2listw(nb_ext_cum_lag,style="W", zero.policy = TRUE)
 Wfull<-listw2mat(FFct_nb_w)
 
-matrix_region$smoothed_pop_ext_cum_order <- Wfull %*% matrix_region$Population
+us_cvd_sp_data$smoothed_pop_ext_cum_order <- Wfull %*% us_cvd_sp_data$Population
 
-ggplot(matrix_region) +
+ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=smoothed_pop_ext_cum_order)) +
   scale_fill_gradientn(colours = viridis(10))
 ```
@@ -921,18 +939,18 @@ ggplot(matrix_region) +
 If we plot the difference of the smoothed population from the actual population, we see that there is systematic overestimation and underestimation throughout this map. This is because of the effect smoothing has on our values. The more counties we use to generate an average summary value for a county, the more the summary value is alike to the average of the entire region. The reduced variation has both a cost and a benefit. 
 
 ```{r}
-matrix_region <- matrix_region %>%
+us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate(Bias = Population - smoothed_pop_ext_cum_order) %>%
   mutate(Bias_cat = cut(Bias, breaks = 7, include.lowest = TRUE, ordered_result = TRUE)) %>%
   mutate("Bias Class" = ifelse(sign(Bias)==-1, "Overestimation", ifelse(sign(Bias)==1, "Underestimation", "Neither"))) 
 
-summary(matrix_region$Bias)
+summary(us_cvd_sp_data$Bias)
 
-ggplot(matrix_region) +
+ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=Bias_cat)) +
   scale_fill_manual(values=c(viridis(7)))
 
-ggplot(matrix_region) +
+ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=`Bias Class`)) +
   scale_fill_manual(values = c(viridis(2)))
 ```
@@ -964,7 +982,7 @@ Broadly speaking, smoothing makes values look more like the global average, ther
 Using the code we used earlier, we can create a function that produces a lagged covariate. This is more efficient that manually creating each variable with the same code and prevents errors. Conversely, errors in our function can be systematically applied to each of our covariates. Since we already have the code and are assured that it functions as we intend, this is not a problem.
 
 ```{r}
-FFct_nb_w <- nb2listw(nbrs_matrix_region_sp,style="W", zero.policy = TRUE)
+FFct_nb_w <- nb2listw(nbrs_us_cvd_sp_data_sp,style="W", zero.policy = TRUE)
 Wfull<-listw2mat(FFct_nb_w)
 
 lag_creator <- function(vector){
@@ -973,7 +991,7 @@ lag_creator <- function(vector){
 }
 
 lag_creator_plus <- function(vector, lags=2){
-  lag_order_list <- nblag(nbrs_matrix_region_sp, maxlag = lags)
+  lag_order_list <- nblag(nbrs_us_cvd_sp_data_sp, maxlag = lags)
   nb_cum_lag <- nblag_cumul(lag_order_list)
   lag_vector <- Wfull %*% vector
   lag_vector
@@ -983,7 +1001,7 @@ sum(complete.cases(covariates)==FALSE)
 
 covariates[which(complete.cases(covariates)==FALSE),]
 
-matrix_region <- matrix_region %>%
+us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("median_age_lag"=lag_creator(median_age),
          "Perc_W_only_lag"=lag_creator(Perc_W_only),
          "Perc_BA_only_lag"=lag_creator(Perc_BA_only),
@@ -994,7 +1012,7 @@ matrix_region <- matrix_region %>%
          "Population_lag"=lag_creator(Population)
          )
 
-matrix_region <- matrix_region %>%
+us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("median_age_lag2"=lag_creator_plus(median_age),
          "Perc_W_only_lag2"=lag_creator_plus(Perc_W_only),
          "Perc_BA_only_lag2"=lag_creator_plus(Perc_BA_only),
@@ -1008,6 +1026,12 @@ matrix_region <- matrix_region %>%
 ```
 
 # Exploratory data analysis 
+
+Before we analyze any of our data, let's set a randomization seed. This will make markov chain estimates reproducible. 
+
+```{r}
+set.seed(9999)
+```
 
 We can explore our data in different ways now that we've merged our data to one of the maps we've imported. 
 
@@ -1036,32 +1060,66 @@ ggplot(subset) +
 ```
 
 ```{r}
-st_crs(matrix_region)
+st_crs(us_cvd_sp_data)
 
-LC_metro1 <- matrix_region %>% filter(`2013 Urbanization`=="Large Central Metro") %>% mutate(index=row_number())
+LC_metro1 <- us_cvd_sp_data %>% filter(`2013 Urbanization`=="Large Central Metro") %>% mutate(index=row_number())
 
-st_agr(matrix_region) <- "constant"
+st_agr(us_cvd_sp_data) <- "constant"
 
 st_agr(LC_metro1) <- "constant"
 
-cen_dist_matrix <- st_distance(x=st_centroid(matrix_region), y=st_centroid(LC_metro1), "Great Circle")
+us_cvd_sp_data_euc <- st_transform(st_centroid(us_cvd_sp_data), 4326)
 
-matrix_region <- matrix_region %>% mutate(cen_dist_m=apply(data.frame(cen_dist_matrix), 1,min),
-                         index=apply(cen_dist_matrix, 1, function(matrix_row) which(matrix_row==min(matrix_row))))
+LC_metro1_euc <- st_transform(st_centroid(LC_metro1), 4326)
+
+cen_dist_matrix <- st_distance(x=us_cvd_sp_data_euc, y=LC_metro1_euc, which = "Great Circle")
+
+us_cvd_sp_data <- us_cvd_sp_data %>% mutate(cen_dist_m=apply(data.frame(cen_dist_matrix), 1,min),
+                         index=apply(cen_dist_matrix, 1, function(matrix_row) which(matrix_row==min(matrix_row)))) %>%
+  mutate(cen_dist_10km=cen_dist_m/(1000*10))
 
 LC_metro1 <- LC_metro1 %>% as.data.frame() %>% dplyr::select(index, county_name) %>% rename("nearest_LC_metro"=county_name)
 
-matrix_region <- matrix_region %>% left_join(LC_metro1, by="index")
+us_cvd_sp_data <- us_cvd_sp_data %>% left_join(LC_metro1, by="index")
 ```
 
 *eval=FALSE*
-matrix_region <- matrix_region %>% mutate(index=st_nearest_feature(st_centroid(matrix_region), st_centroid(LC_metro1)))
+us_cvd_sp_data <- us_cvd_sp_data %>% mutate(index=st_nearest_feature(st_centroid(us_cvd_sp_data), st_centroid(LC_metro1)))
 *chunk ends*
+
+```{r}
+# "" around numbers for the same reason as mentioned before
+
+surrounding_states <- c("37", #NC
+                        "47", #TN
+                        "21", #KY
+                        "18", #IN
+                        "26" #MI
+                        )
+
+matrix_counties <- c(state_fp, surrounding_states)
+
+NE_cvd_sp_data <- us_cvd_sp_data %>% 
+  filter(STATEFP %in% matrix_counties)
+
+NE_cvd_sp_data <- NE_cvd_sp_data %>%
+  mutate(Region = ifelse(STATEFP %in% state_fp, "Region of Interest", "Surrounding States"))
+
+```
+
+Let's look at what we did visually. 
+
+```{r}
+ggplot(NE_cvd_sp_data) + 
+  geom_sf(aes(fill=Region))
+```
 
 Now that we have calculated all of our spatial covariates, we can remove counties that are not part of our region of interest. 
 
-```{r}
-matrix_region <- matrix_region %>% filter(Region =="Region of Interest")
+**MICHAEL** Check this.
+
+```{r, eval=FALSE}
+us_cvd_sp_data <- us_cvd_sp_data %>% filter(Region =="Region of Interest")
 ```
 
 # Data analysis 
@@ -1070,22 +1128,22 @@ matrix_region <- matrix_region %>% filter(Region =="Region of Interest")
 model0 <- glm(Deaths ~ 1, 
             family="poisson",
             offset = log(Population),
-            data=matrix_region,
+            data=us_cvd_sp_data,
             na.action = na.exclude)
 
-matrix_region <- matrix_region %>%
+us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("residuals0"=residuals.glm(model0, "response"))
 
-matrix_region %>%
+us_cvd_sp_data %>%
   ggplot() +
   geom_sf(aes(fill=residuals0), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white", high="red")
 
-matrix_region <- matrix_region[is.na(matrix_region$residuals0)==FALSE,]
-nbrs_matrix_region_sp <- poly2nb(matrix_region, queen = TRUE)
-FFct_nb_w_test <- nb2listw(nbrs_matrix_region_sp,style="W", zero.policy = TRUE)
+us_cvd_sp_data <- us_cvd_sp_data[is.na(us_cvd_sp_data$residuals0)==FALSE,]
+nbrs_us_cvd_sp_data_sp <- poly2nb(us_cvd_sp_data, queen = TRUE)
+FFct_nb_w_test <- nb2listw(nbrs_us_cvd_sp_data_sp,style="W", zero.policy = TRUE)
 
-moran_cor_m0 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals0,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m0 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals0,order=5,method="I",style="W", zero.policy = TRUE)
 ```
 
 ```{r}
@@ -1099,7 +1157,7 @@ model1 <- glm(Deaths ~ median_age +
               `2013 Urbanization`, 
             family="poisson",
             offset = log(Population),
-            data=matrix_region,
+            data=us_cvd_sp_data,
             na.action = na.exclude)
 
 model2 <- glm(Deaths ~ median_age + 
@@ -1119,7 +1177,7 @@ model2 <- glm(Deaths ~ median_age +
               `2013 Urbanization`, 
             family="poisson",
             offset = log(Population),
-            data=matrix_region,
+            data=us_cvd_sp_data,
             na.action = na.exclude)
 ```
 
@@ -1128,7 +1186,7 @@ The presence of multicollinearity means that there is correlation between variab
 Let's produce some correlation matrices and compare them with computed variance inflation factors for our variables. 
 
 ```{r}
-melt_cor1 <- as.data.frame(matrix_region) %>%
+melt_cor1 <- as.data.frame(us_cvd_sp_data) %>%
   dplyr::select(median_age,
          Perc_W_only,
          Perc_BA_only,
@@ -1156,7 +1214,7 @@ melt_cor1 %>%
 ```
 
 ```{r}
-melt_cor2 <- as.data.frame(matrix_region) %>%
+melt_cor2 <- as.data.frame(us_cvd_sp_data) %>%
   dplyr::select(median_age_lag,
          Perc_W_only_lag,
          Perc_BA_only_lag,
@@ -1184,7 +1242,7 @@ melt_cor2 %>%
 ```
 
 ```{r}
-melt_cor3 <- as.data.frame(matrix_region) %>%
+melt_cor3 <- as.data.frame(us_cvd_sp_data) %>%
   dplyr::select(median_age,
          Perc_W_only,
          Perc_BA_only,
@@ -1224,7 +1282,7 @@ vif(model2)
 ```
 
 ```{r}
-sum(is.na(matrix_region$Deaths))
+sum(is.na(us_cvd_sp_data$Deaths))
 length(model1$residuals)
 length(model2$residuals)
 ```
@@ -1232,40 +1290,40 @@ length(model2$residuals)
 ```{r}
 #Are the residuals being plotted correctly? 
 
-matrix_region <- matrix_region %>%
+us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("residuals1"=residuals.glm(model1, "response"))
 
-matrix_region %>%
+us_cvd_sp_data %>%
   ggplot() +
   geom_sf(aes(fill=residuals1), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white", high="red")
 
-matrix_region <- matrix_region %>%
+us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("residuals2"=residuals.glm(model2, "response"))
 
-matrix_region %>% 
+us_cvd_sp_data %>% 
   ggplot() +
   geom_sf(aes(fill=residuals2), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white", high="red")
 
-moran_cor_m1 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals1,order=5,method="I",style="W", zero.policy = TRUE)
-moran_cor_m2 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals2,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m1 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals1,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m2 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals2,order=5,method="I",style="W", zero.policy = TRUE)
 plot(moran_cor_m1,ylim=c(-0.2, 0.4),main="Residuals from model 1")
 plot(moran_cor_m2,ylim=c(-0.2, 0.4),main="Residuals from model 2")
 ```
 
-matrix_region <- matrix_region[is.na(matrix_region$residuals1)==FALSE,]
-nbrs_matrix_region_sp <- poly2nb(matrix_region, queen = TRUE)
-FFct_nb_w_test <- nb2listw(nbrs_matrix_region_sp,style="W", zero.policy = TRUE)
+us_cvd_sp_data <- us_cvd_sp_data[is.na(us_cvd_sp_data$residuals1)==FALSE,]
+nbrs_us_cvd_sp_data_sp <- poly2nb(us_cvd_sp_data, queen = TRUE)
+FFct_nb_w_test <- nb2listw(nbrs_us_cvd_sp_data_sp,style="W", zero.policy = TRUE)
 
 Checking to see if average of neighbors is used. *This could be a great way to explain the weighted matrix. The code used in this case study appears somewhat black box-ish. It's important to not only describe the programming, but what it's actually doing.*
 
 *This code does not work after the inclusion of code that removes surrounding states from the spatial data and was made no longer a chunk. An adaptation will be very helpful.*
 
-matrix_region <- matrix_region %>% mutate(ID=row_number())
-matrix_region %>% filter(GEOID==36047) %>% pull(median_income_lag)
-matrix_region %>% filter(GEOID==36047) %>% pull(ID)
-matrix_region %>% filter(ID %in% FFct_nb_w_test[[2]][[773]]) %>% dplyr::select(median_income, GEOID) %>% summarise(average=mean(median_income))
+us_cvd_sp_data <- us_cvd_sp_data %>% mutate(ID=row_number())
+us_cvd_sp_data %>% filter(GEOID==36047) %>% pull(median_income_lag)
+us_cvd_sp_data %>% filter(GEOID==36047) %>% pull(ID)
+us_cvd_sp_data %>% filter(ID %in% FFct_nb_w_test[[2]][[773]]) %>% dplyr::select(median_income, GEOID) %>% summarise(average=mean(median_income))
 
 
 FFct_nb_w_test[[2]][[773]]
@@ -1303,7 +1361,7 @@ model1_nb <- glm.nb(Deaths ~ median_age +
               perc_insured + 
               `2013 Urbanization` + 
               offset(log(Population)), 
-            data=matrix_region,
+            data=us_cvd_sp_data,
             na.action = na.exclude)
 
 model2_nb <- glm.nb(Deaths ~ median_age + 
@@ -1322,7 +1380,7 @@ model2_nb <- glm.nb(Deaths ~ median_age +
               perc_insured_lag +
               `2013 Urbanization` +
               offset(log(Population)),
-            data=matrix_region,
+            data=us_cvd_sp_data,
             na.action = na.exclude)
 ```
 
@@ -1332,24 +1390,24 @@ vif(model2_nb)
 ```
 
 ```{r}
-matrix_region <- matrix_region %>%
+us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("residuals1nb"=residuals.glm(model1_nb, "response"))
 
-matrix_region %>%
+us_cvd_sp_data %>%
   ggplot() +
   geom_sf(aes(fill=residuals1nb), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white" ,high="red")
 
-matrix_region <- matrix_region %>%
+us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("residuals2nb"=residuals.glm(model2_nb, "response"))
 
-matrix_region %>% 
+us_cvd_sp_data %>% 
   ggplot() +
   geom_sf(aes(fill=residuals2nb), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white", high="red")
 
-moran_cor_m1nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals1nb,order=5,method="I",style="W", zero.policy = TRUE)
-moran_cor_m2nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals2nb,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m1nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals1nb,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m2nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals2nb,order=5,method="I",style="W", zero.policy = TRUE)
 
 par(mfrow=c(2,2))
 
@@ -1369,7 +1427,7 @@ model3 <- glm(Deaths ~ median_age +
               `2013 Urbanization`, 
             family="poisson",
             offset = log(Population),
-            data=matrix_region,
+            data=us_cvd_sp_data,
             na.action = na.exclude)
 
 model4 <- glm(Deaths ~ median_age + 
@@ -1387,29 +1445,29 @@ model4 <- glm(Deaths ~ median_age +
                 `2013 Urbanization`, 
             family="poisson",
             offset = log(Population),
-            data=matrix_region,
+            data=us_cvd_sp_data,
             na.action = na.exclude)
 ```
 
 ```{r}
-matrix_region <- matrix_region %>%
+us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("residuals3"=residuals.glm(model3, "response"))
 
-matrix_region %>%
+us_cvd_sp_data %>%
   ggplot() +
   geom_sf(aes(fill=residuals3), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white" ,high="red")
 
-matrix_region <- matrix_region %>%
+us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("residuals4"=residuals.glm(model4, "response"))
 
-matrix_region %>%
+us_cvd_sp_data %>%
   ggplot() +
   geom_sf(aes(fill=residuals4), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white" ,high="red")
 
-moran_cor_m3 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals3,order=5,method="I",style="W", zero.policy = TRUE)
-moran_cor_m4 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals4,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m3 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals3,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m4 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals4,order=5,method="I",style="W", zero.policy = TRUE)
 ```
 
 Does the next set of models exhibit overdispersion?
@@ -1443,7 +1501,7 @@ model3_nb <- glm.nb(Deaths ~ median_age +
               perc_insured + 
               `2013 Urbanization` +
                 offset(log(Population)),
-            data=matrix_region,
+            data=us_cvd_sp_data,
             na.action = na.exclude)
 
 model4_nb <- glm.nb(Deaths ~ median_age + 
@@ -1460,7 +1518,7 @@ model4_nb <- glm.nb(Deaths ~ median_age +
               perc_insured_lag + 
               `2013 Urbanization` +
                 offset(log(Population)),
-            data=matrix_region,
+            data=us_cvd_sp_data,
             na.action = na.exclude)
 ```
 
@@ -1470,24 +1528,24 @@ vif(model4_nb)
 ```
 
 ```{r}
-matrix_region <- matrix_region %>%
+us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("residuals3nb"=residuals.glm(model3_nb, "response"))
 
-matrix_region %>%
+us_cvd_sp_data %>%
   ggplot() +
   geom_sf(aes(fill=residuals3nb), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white" ,high="red")
 
-matrix_region <- matrix_region %>%
+us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("residuals4nb"=residuals.glm(model4_nb, "response"))
 
-matrix_region %>%
+us_cvd_sp_data %>%
   ggplot() +
   geom_sf(aes(fill=residuals4nb), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white" ,high="red")
 
-moran_cor_m3nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals3nb,order=5,method="I",style="W", zero.policy = TRUE)
-moran_cor_m4nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals4nb,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m3nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals3nb,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m4nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals4nb,order=5,method="I",style="W", zero.policy = TRUE)
 
 par(mfrow=c(2,2))
 
@@ -1513,13 +1571,13 @@ model5 <- glm(Deaths ~ median_age +
                 `2013 Urbanization`, 
             family="poisson",
             offset = log(Population),
-            data=matrix_region,
+            data=us_cvd_sp_data,
             na.action = na.exclude)
 
-matrix_region <- matrix_region %>%
+us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("residuals5"=residuals.glm(model5, "response"))
 
-matrix_region %>%
+us_cvd_sp_data %>%
   ggplot() +
   geom_sf(aes(fill=residuals5), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white" ,high="red")
@@ -1550,21 +1608,21 @@ model5_nb <- glm.nb(Deaths ~ median_age +
               perc_insured_lag2 + 
               `2013 Urbanization` +
                 offset(log(Population)),
-            data=matrix_region,
+            data=us_cvd_sp_data,
             na.action = na.exclude)
 
-matrix_region <- matrix_region %>%
+us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("residuals5nb"=residuals.glm(model5_nb, "response"))
 
-matrix_region %>%
+us_cvd_sp_data %>%
   ggplot() +
   geom_sf(aes(fill=residuals5nb), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white" ,high="red")
 ```
 
 ```{r}
-moran_cor_m5 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals5,order=5,method="I",style="W", zero.policy = TRUE)
-moran_cor_m5nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals5nb,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m5 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals5,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m5nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals5nb,order=5,method="I",style="W", zero.policy = TRUE)
 
 par(mfrow=c(1,2))
 
@@ -1589,18 +1647,18 @@ model6 <- glm(Deaths ~ median_age +
               Population_lag,
             family="poisson",
             offset = log(Population),
-            data=matrix_region,
+            data=us_cvd_sp_data,
             na.action = na.exclude)
 
-matrix_region <- matrix_region %>%
+us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("residuals6"=residuals.glm(model6, "response"))
 
-matrix_region %>%
+us_cvd_sp_data %>%
   ggplot() +
   geom_sf(aes(fill=residuals6), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white" ,high="red")
 
-moran_cor_m6 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals6,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m6 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals6,order=5,method="I",style="W", zero.policy = TRUE)
 ```
 
 ```{r}
@@ -1616,38 +1674,35 @@ paste("Pearson goodness of fit = ", round(chi_square_model6,2), ", df = ", degre
 ```{r}
 #not the same as model6
 model6_nb <- glm.nb(Deaths ~ median_age + 
-                      median_age_lag +
-              Perc_W_only + 
-              Perc_W_only_lag + 
-              median_income +
-              median_income_lag + 
+              median_income + + 
               perc_insured +
-              perc_insured_lag +
-                cen_dist_m +
-                nearest_LC_metro +
-                `2013 Urbanization Simplified` + 
+                cen_dist_10km +
+                nearest_LC_metro  + 
                 offset(log(Population)),
-            data=matrix_region,
+            data=us_cvd_sp_data,
             na.action = na.exclude)
+```
+                
+```{r}
 
-matrix_region <- matrix_region %>%
+us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("residuals6nb"=residuals.glm(model6_nb, "response"))
 
-matrix_region %>%
+us_cvd_sp_data %>%
   ggplot() +
   geom_sf(aes(fill=residuals6nb), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white" ,high="red")
 
-moran_cor_m6nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=matrix_region$residuals6nb,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m6nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals6nb,order=5,method="I",style="W", zero.policy = TRUE)
 
 plot(moran_cor_m6,ylim=c(-0.2, 0.4),main="Residuals from model 6")
 plot(moran_cor_m6nb,ylim=c(-0.2, 0.4),main="Residuals from model 6, nb")
 ```
 
 ```{r}
-matrix_region %>%
+us_cvd_sp_data %>%
   ggplot() +
-  geom_sf(aes(fill=cen_dist_m), color="transparent") + 
+  geom_sf(aes(fill=cen_dist_10km), color="transparent") + 
   scale_fill_gradient2(low="white" ,high="black")
 ```
 
@@ -1656,7 +1711,7 @@ vif(model6_nb)
 ```
 
 ```{r}
-ggplot(matrix_region, aes(x=Population, y=residuals6nb, label=County, color=`2013 Urbanization`)) +
+ggplot(us_cvd_sp_data, aes(x=Population, y=residuals6nb, label=County, color=`2013 Urbanization`)) +
   geom_point() + 
   geom_text()
 ```
@@ -1710,12 +1765,18 @@ We need to be careful about over-interpreting correlograms, particularly when th
 We can test for autocorrelation globally by estimating the Moran's I statistic
 
 ```{r}
-moran.mc(matrix_region$residuals6nb, listw =FFct_nb_w_test,nsim = 9999, zero.policy = TRUE)
+moran.mc(us_cvd_sp_data$residuals6nb, listw =FFct_nb_w_test,nsim = 9999, zero.policy = TRUE)
 ```
+
+**MICHAEL**: This needs to be revisited. 
 
 Our Moran's I statistic is close to 0 and is not significant. Our model appears to have accounted for residual spatial autocorrelation.
 
 Residual spatial autocorrelation can have a large impact on the usefulness of our model. Had we not accounted for it, our standard errors would have been underestimated, amongst other things. Ultimately, such behavior in the residuals is indicative of unaccounted for information in a model.
+
+```{r}
+summary(model6_nb)
+```
 
 # Summary of results
 
@@ -1731,46 +1792,6 @@ tm_shape(subset) +
 				border.col = "white",
 				title=c("Deaths", "Population", "Crude Rate", "2013 Urbanization")) + tm_facets(as.layers = TRUE)
 ```
-				
-# Downloaded data
-
-Total population 5 year 2017
-https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_B01003&prodType=table
-
-https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_S2701&prodType=table
-SELECTED CHARACTERISTICS OF HEALTH INSURANCE COVERAGE IN THE UNITED STATES  more information
-2013-2017 American Community Survey 5-Year Estimates
-
-https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_S1903&prodType=table
-MEDIAN INCOME IN THE PAST 12 MONTHS (IN 2017 INFLATION-ADJUSTED DOLLARS)  more information
-2013-2017 American Community Survey 5-Year Estimates
-
-https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_1YR_B01002&prodType=table
-MEDIAN AGE BY SEX
-Universe: Total population  more information
-2017 American Community Survey 1-Year Estimates
-
-https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_B02001&prodType=table
-RACE
-Universe: Total population  more information
-2013-2017 American Community Survey 5-Year Estimates
-
-https://factfinder.census.gov/faces/tableservices/jsf/pages/productview.xhtml?pid=ACS_17_5YR_B03002&prodType=table
-HISPANIC OR LATINO ORIGIN BY RACE
-Universe: Total population  more information
-2013-2017 American Community Survey 5-Year Estimates
-
-UCD Death Data—CDC Wonder
-https://wonder.cdc.gov/ucd-icd10.html
-
-
-pivot wide pivot longr in tidyr for reshape melt, change font theme
-
-reinforce weight matrix multiple to average--Leah Meeting 
-
-check for truncation effect of urban centers
-
-explanation of edge vs centroid.
 
 # Further Reading
 
