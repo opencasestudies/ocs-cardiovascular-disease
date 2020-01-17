@@ -30,6 +30,8 @@ explanation of edge vs centroid.
 
 convert dist covariate to km 
 
+create function to wrangle data
+
 # Motivation
 
 ## Background
@@ -636,6 +638,7 @@ The crude rate included in the mortality data is calculated by dividing the numb
 ucd_heart$Notes <- NULL
 ucd_heart$Population <- NULL
 ucd_heart$`Crude Rate` <- NULL
+ucd_heart$`2013 Urbanization Code` <- NULL
 ```
 
 We then coerce the urbanization categories to a `factor` class. 
@@ -680,6 +683,22 @@ ucd_heart <- ucd_heart %>% mutate("2013 Urbanization Simplified"=fct_collapse(`2
                   "Micropolitan (Nonmetro)")))
 ```
 
+We check for any missing observations. 
+
+```{r}
+apply(ucd_heart, 2, function(x)sum(is.na(x)))
+```
+
+It appears that there may be 78 rows with missing information. After confirming this, we discard these rows.
+
+```{r}
+ucd_heart %>%
+  filter(is.na(Deaths) & is.na(GEOID))
+
+ucd_heart <- ucd_heart %>%
+  filter(!(is.na(Deaths) & is.na(GEOID)))
+```
+
 ## United States county boundaries
 
 *MICHAEL*: Why is EPSG 2163 used? Need to explain EPSG 
@@ -706,9 +725,6 @@ class(map_sf$Population)
 class(map_sf$`2013 Urbanization`)
 
 map_sf$Population <- as.numeric(map_sf$Population)
-
-map_sf <- map_sf %>%
-  mutate("Crude Rate"=round((Deaths/Population)*1e+06,3))
 ```
 
 ```{r}
@@ -818,6 +834,78 @@ contiguous_us <- map_sf %>% filter(!(STATEFP %in% c("02", #Alaska
                                                     )))
 ```
 
+When using reference codes to join datasets, it's important to check for missing values. If the datasets use the same reference code system—but were updated at different times or use a slightly different convention—some observations will be unable to join correctly. This could cause issues that are difficult to diagnose later on. As always, it's important to check your work, especially early on during the wrangling process.
+
+[The CDC has published a document with changes to county geographies ](https://www.cdc.gov/nchs/nvss/bridged_race/county_geography-_changes2015.pdf). If we open this document, we learn that some counties are referred to by names other than those listed in mortality files. 
+
+Let's examine our dataset to see if this is an issue. 
+
+We can do this by examining the number of missing values for a given column. This is because errors in joins often manifest themselves as missing values. 
+
+Using the `apply()` function, we can count the number of missing values per column. It appears that there are two types of missing values: missing values caused by suppressed death counts and missing values pertaining to county names and/or urbanization categories. 
+
+```{r}
+apply(contiguous_us, 2, function(x)sum(is.na(x)))
+```
+
+If we look at the missing data more closely we find that the missing values pertaining to county names and/or urbanization categories is entirely attributable to one county. This county is listed as having had a change in name on the document published by the CDC referred to previously.
+
+```{r}
+contiguous_us %>%
+  filter(is.na(County)|
+           is.na(`2013 Urbanization`)) %>% 
+  pull(NAME)
+```
+
+Furthermore, this observation has an observed population but missing death count and crude mortality rate. 
+
+```{r}
+contiguous_us %>%
+  filter(is.na(County)|
+           is.na(`2013 Urbanization`)) %>% 
+  pull(Population)
+
+contiguous_us %>%
+  filter(is.na(County)|
+           is.na(`2013 Urbanization`)) %>% 
+  pull(Deaths)
+```
+
+Assuming that an overwhelming majority of missing mortality data is a result of data suppression, we can determine that there was a single error that occurred when joining datasets by reference codes given the above information. Additionally, because population data is properly joined and mortality data is missing we can deduce that this single error emerged when the mortality data was joined.
+
+Indeed, if we look at the mortality data we find that what is now Oglala Lakota County (46201) is referred to as Shannon County (46113).  
+
+```{r}
+ucd_heart %>%
+  filter(GEOID==46113|GEOID==46102)
+```
+
+To fix the error, we need to treat Oglala Lakota County (46102) as if it were Shannon County (46113) in what will become our analysis dataframe. 
+
+To do this we overwrite data from Oglala Lakota County (46102) with data from Shannon County (46113). We create a dataframe with the data that we want to use to replace missing values. Then we use `left_join()` to merge this dataframe to what will become our analysis dataframe. This causes two additional columns to be made, each with the same name as the original column and with an `.x` or `.y` at the end. This occurs when joins are done with datasets that have similarly named columns.  We then use the `coalesce()` function to merge the two colums that were created during this join into one column. Lastly, we use the `select()` function in conjuction with the `names` function to ensure that we obtain a dataset with the same columns we started with.
+
+```{r}
+oglala_correction <- ucd_heart %>%
+  filter(GEOID=="46113") %>%
+  mutate(GEOID="46102", County="Oglala Lakota")
+
+contiguous_us <- contiguous_us %>%
+  left_join(oglala_correction, by="GEOID") %>%
+  mutate(Deaths=coalesce(Deaths.x, Deaths.y)) %>%
+  mutate(County=coalesce(`County.x`,`County.y`)) %>%
+  mutate(`2013 Urbanization`=coalesce(`2013 Urbanization.x`,`2013 Urbanization.y`)) %>%
+  mutate(`2013 Urbanization Simplified`=coalesce(`2013 Urbanization Simplified.x`,`2013 Urbanization Simplified.y`)) %>%
+  select(names(contiguous_us))
+```
+
+Now that we have the death count and population of each county correctly joined, we can calculated the crude rate per 100,000 people.
+
+```{r}
+contiguous_us <- contiguous_us %>%
+  mutate("Crude Rate"=round((Deaths/Population)*1e+05,3))  %>%
+  mutate("Crude Rate"=round((Deaths/Population)*1e+05,3))
+```
+
 ## Lag Covariates
 
 **MICHAEL** This entire section needs to be checked. Changes were made to ensure that there was no trunctating effect on the analysis. 
@@ -832,7 +920,7 @@ Five states border our region of interest. Let's include them in our neighborhoo
 us_cvd_sp_data <- contiguous_us
 ```
 
-```{r}
+```{r, eval=FALSE}
 ucd_cvd_sp_data <- us_cvd_sp_data %>%
   filter(!is.na(Deaths))
 ```
@@ -1051,13 +1139,17 @@ ggplot(contiguous_us) +
 
 If we look at the Northeastern United States... *update*
 
-```{r}
+**MICHAEL** Everything having to do with the subregion needs to be looked over again and possibly removed. 
+
+```{r, eval=FALSE}
 ggplot(subset) +
   geom_sf(aes(fill=`Crude Rate`), color="black", lwd=0.1) +
   scale_fill_gradientn(colours = viridis(10)) +
   ggtitle("Crude Rate", subtitle = "Northeastern United States") + 
   theme_OCS
 ```
+
+**Michael**: Must show the dimensions of the distance matrix. Distance matrix is a bit unclear at this moment to the audience of this case study.
 
 ```{r}
 st_crs(us_cvd_sp_data)
@@ -1068,11 +1160,11 @@ st_agr(us_cvd_sp_data) <- "constant"
 
 st_agr(LC_metro1) <- "constant"
 
-us_cvd_sp_data_euc <- st_transform(st_centroid(us_cvd_sp_data), 4326)
+us_cvd_sp_data_geodetic <- st_transform(st_centroid(us_cvd_sp_data), 4326)
 
-LC_metro1_euc <- st_transform(st_centroid(LC_metro1), 4326)
+LC_metro1_geodetic <- st_transform(st_centroid(LC_metro1), 4326)
 
-cen_dist_matrix <- st_distance(x=us_cvd_sp_data_euc, y=LC_metro1_euc, which = "Great Circle")
+cen_dist_matrix <- st_distance(x=us_cvd_sp_data_geodetic, y=LC_metro1_geodetic, which = "Great Circle")
 
 us_cvd_sp_data <- us_cvd_sp_data %>% mutate(cen_dist_m=apply(data.frame(cen_dist_matrix), 1,min),
                          index=apply(cen_dist_matrix, 1, function(matrix_row) which(matrix_row==min(matrix_row)))) %>%
@@ -1120,6 +1212,144 @@ Now that we have calculated all of our spatial covariates, we can remove countie
 
 ```{r, eval=FALSE}
 us_cvd_sp_data <- us_cvd_sp_data %>% filter(Region =="Region of Interest")
+```
+
+**MICHAEL** This needs to be updated to reflect "Great Circle" distance with the `st_distance` function as shown earlier in this case study. 
+
+**MICHAEL** Constant error shows below. This should be fixed and then explained when done earlier in this case study. The code fixing the warning/constant at the moment is not explained well and almost appears arbitrary. Must read some more about this. 
+
+**Michael**: Code below is suitable for distances but not deaths. Needs to be adapted for deaths. 
+
+```{r}
+mortality_missing <- us_cvd_sp_data %>% filter(is.na(Deaths))
+
+mortality_complete <- us_cvd_sp_data %>% filter(!is.na(Deaths))
+
+mortality_missing_geodetic <- st_transform(st_centroid(mortality_missing), 4326)
+
+mortality_complete_geodetic <- st_transform(st_centroid(mortality_complete), 4326)
+
+missing_mortality_matrix <- st_distance(x=mortality_missing_geodetic, y=mortality_complete_geodetic, which = "Great Circle")
+
+missing_nearest_neighbors <- t(apply(missing_mortality_matrix, 1, order)[1:5, ])
+
+dim(missing_nearest_neighbors)
+
+missing_nearest_neighbors <- as.data.frame(missing_nearest_neighbors)
+
+mortality_complete_no_geom <- mortality_complete
+
+st_geometry(mortality_complete_no_geom) <- NULL
+
+missing_nearest_neighbors <- apply(missing_nearest_neighbors, 1,function(x)(mortality_complete_no_geom[x,"Crude Rate"]))
+
+missing_nearest_neighbors <- sapply(missing_nearest_neighbors,"[[", "Crude Rate")
+
+dim(missing_nearest_neighbors)
+
+missing_nearest_neighbors <- t(missing_nearest_neighbors)
+
+mortality_missing <- mortality_missing %>%
+  mutate("Crude Rate" = apply(missing_nearest_neighbors ,1, mean),
+         Deaths = ifelse(is.na(Deaths), round((`Crude Rate` * Population)/1e+05, 0), Deaths)) 
+
+us_cvd_sp_data <- mortality_complete %>%
+  rbind(mortality_missing)
+
+apply(us_cvd_sp_data, 2, function(x)sum(is.na(x)))
+
+us_cvd_sp_data[which(is.na(us_cvd_sp_data$Deaths)),]
+```
+
+**Michael** The math above for the death imputation needs to be checked as the crude rate is in a unit that could inadvertently multiply the number of deaths by a multiple of 10. 
+
+**Michael** There is an NA value that may cause a problem.
+
+```{r}
+ggplot(us_cvd_sp_data) +
+  geom_sf(aes(fill=Deaths), color="black", lwd=0.1) +
+  scale_fill_gradientn(colours = viridis(5)) +
+  labs(title = "Deaths", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  theme_OCS
+```
+
+```{r}
+ggplot(us_cvd_sp_data) +
+  geom_sf(aes(fill=log(Deaths+1)), color="black", lwd=0.1) +
+  scale_fill_gradientn(colours = viridis(5)) +
+  labs(title = "log(Deaths+1)", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  theme_OCS
+```
+
+```{r}
+ggplot(us_cvd_sp_data) +
+  geom_sf(aes(fill=Population), color="black", lwd=0.1) +
+  scale_fill_gradientn(colours = viridis(5)) +
+  labs(title = "Population", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  theme_OCS
+```
+
+```{r}
+ggplot(us_cvd_sp_data) +
+  geom_sf(aes(fill=log(Population)), color="black", lwd=0.1) +
+  scale_fill_gradientn(colours = viridis(5)) +
+  labs(title = "log(Population)", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  theme_OCS
+```
+
+```{r}
+ggplot(us_cvd_sp_data) +
+  geom_sf(aes(fill=log(`Crude Rate`)), color="black", lwd=0.1) +
+  scale_fill_gradientn(colours = viridis(5)) +
+  labs(title = "Crude Rate", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  theme_OCS
+```
+
+```{r}
+ggplot(us_cvd_sp_data) +
+  geom_sf(aes(fill=`2013 Urbanization`), color="black", lwd=0.1) +
+  labs(title = "2013 Urbanization", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  theme_OCS
+```
+
+```{r}
+ggplot(us_cvd_sp_data) +
+  geom_sf(aes(fill=Perc_W_only), color="black", lwd=0.1) +
+  scale_fill_gradientn(colours = viridis(5)) +
+  labs(title = "Perc_W_only", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  theme_OCS
+```
+
+```{r}
+ggplot(us_cvd_sp_data) +
+  geom_sf(aes(fill=Perc_BA_only), color="black", lwd=0.1) +
+  scale_fill_gradientn(colours = viridis(5)) +
+  labs(title = "Perc_B_only", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  theme_OCS
+```
+
+```{r}
+ggplot(us_cvd_sp_data) +
+  geom_sf(aes(fill=Perc_A_only), color="black", lwd=0.1) +
+  scale_fill_gradientn(colours = viridis(5)) +
+  labs(title = "Perc_A_only", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  theme_OCS
+```
+
+```{r}
+ggplot(us_cvd_sp_data) +
+  geom_sf(aes(fill=Perc_Hispanic_Latino), color="black", lwd=0.1) +
+  scale_fill_gradientn(colours = viridis(5)) +
+  labs(title = "Perc_Hispanic_Latino", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  theme_OCS
+```
+
+```{r}
+ggplot(us_cvd_sp_data) +
+  geom_sf(aes(fill=perc_insured), color="black", lwd=0.1) +
+  scale_fill_gradientn(colours = viridis(5)) +
+  labs(title = "perc_insured", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  theme_OCS
 ```
 
 # Data analysis 
@@ -1796,3 +2026,5 @@ tm_shape(subset) +
 # Further Reading
 
 [Residual spatial autocorrelation in macroecological and biogeographical modeling: a review](https://link.springer.com/article/10.1186/s41610-019-0118-3)
+
+replace as.numeric(paste( with mean()
