@@ -1,6 +1,5 @@
 ---
 title: "Spatial Analysis of Cardiovascular Diseases in the Northeastern United States"
-author: "Michael Ontiveros"
 output: 
     html_document:
         theme: cosmo 
@@ -24,25 +23,29 @@ pivot wide pivot longr in tidyr for reshape melt, change font theme
 
 reinforce weight matrix multiple to average--Leah Meeting 
 
-check for truncation effect of urban centers
-
 explanation of edge vs centroid.
 
 convert dist covariate to km 
 
 create function to wrangle data
 
+explain why geometries must be constant. 
+
+Need to explain EPSG codes. check out [this website](http://support.virtual-surveyor.com/en/support/solutions/articles/1000261353-what-is-an-epsg-code-)
+
 # Motivation
 
 ## Background
 
-Cardiovascular diseases are currently the leading cause of death in the United States. Much is already known about the causes of most cardiovascular diseases. We intend to explore the environmental characteristics related to the mortality of these diseases. 
+Cardiovascular diseases are currently the leading cause of death in the United States. Much is already known about the causes of most cardiovascular diseases. We intend to explore potential environmental characteristics related to the mortality of cardiovascular diseases. 
 
 ## Analysis goal
 
 We will identify county-level characteristics that are associated with cardiovascular disease mortality in the Northeastern United States, giving particular attention to the potential effects of neighboring counties. 
 
 ## Learning objectives
+
+**MICHAEL** This needs to be revisited to include something about the assumptions made about non-spatial models and how we account for when these assumptions fail in the following case study.
 
 The learning objectives include data wrangling of spatial data, spatial smoothing, and the creation and interpretation of spatially lagged models.
 
@@ -113,13 +116,16 @@ We'll begin by importing the United States county boundaries data. Note that we 
 The spatial data format we will be using for our analysis is known as the shapefile format. Shapefiles are a file format originated by Esri, the developers of the popular ArcGIS. Shapefiles can store a wide array of spatial data and are the most widely used format for spatial data. 
 
 Using `read_sf` by the `sf` package, we can read in the shapefiles for our analysis. 
-*MICHAEL*: Need to show source for this document
+
+The shapefiles for this analysis can be found [here](https://www.census.gov/geographies/mapping-files/2017/geo/kml-cartographic-boundary-files.html).
 
 ```{r}
 map_sf <- read_sf("cb_2017_us_county_20m/cb_2017_us_county_20m.shp")
+st_crs(map_sf)
 map_sf <- st_transform(map_sf, 2163)
 
 map_sf_high_res <- read_sf("cb_2017_us_county_500k/cb_2017_us_county_500k.shp")
+st_crs(map_sf)
 map_sf_high_res <- st_transform(map_sf_high_res, 2163)
 ```
 
@@ -230,7 +236,6 @@ B01002
 
 ---
 
-
 RACE
 
 B02001
@@ -303,6 +308,20 @@ We'll begin by wrangling the American Community Survey data.
 Let's prepare the dataset with the total population for each county. 
 
 ```{r}
+ACS_wranglr <- function(dataframe, old_name, new_name){
+  colnames(dataframe) <- dataframe[1,]
+  dataframe <- dataframe[-1,]
+  colnames(dataframe)[colnames(dataframe)=="Id2"] <- "FIPS"
+  colnames(dataframe)[colnames(dataframe)==old_name] <- new_name
+  dataframe <- dataframe %>%
+    select(FIPS, new_name)
+  dataframe
+}
+
+ACS_wranglr(total_pop, "Estimate; Total", "Population")
+```
+
+```{r}
 dim(total_pop)
 ```
 
@@ -323,9 +342,6 @@ Below we do just that. We used the first row to replace the column names. Then, 
 ```{r}
 colnames(total_pop) <- total_pop[1,]
 total_pop <- total_pop[-1,]
-total_pop$Id <- NULL
-total_pop$`Margin of Error; Total` <- NULL
-total_pop$Geography <- NULL
 ```
 
 If we look at our dataframe now, each population estimate is coupled to a five digit code. Each US county has a unique identifier, called a FIPS code, that allows tabular data to be joined to spatial data. 
@@ -340,11 +356,11 @@ Eventually, we will be joining this dataframe to our spatial data. Rather than j
 
 For wrangling and regression analysis purposes, we need to rename our columns. Our other dataframes, also from the American Community Survey, will also use unique FIPS codes to refer to counties. 
 
-*MICHAEL*: there is a need to call this a FIPS code rather than GEOID. 
-
 ```{r}
 total_pop <- total_pop %>%
-  rename("GEOID"=Id2, "Population"=`Estimate; Total`)
+  rename("FIPS"=Id2, "Population"=`Estimate; Total`)
+
+total_pop$Population <- as.numeric(total_pop$Population)
 ```
 
 ### Median age
@@ -367,10 +383,9 @@ Like the prior dataset, this dataset uses column names that correspond to a code
 colnames(med_age)
 colnames(med_age) <- med_age[1,]
 med_age <- med_age[-1,]
-med_age$Id <- NULL
 med_age <- med_age %>%
-  rename("GEOID"=Id2, "median_age"=`Estimate; Median age -- - Total:`) %>%
-  dplyr::select(GEOID, median_age)
+  rename("FIPS"=Id2, "median_age"=`Estimate; Median age -- - Total:`) %>%
+  dplyr::select(FIPS, median_age)
 class(med_age$median_age)
 med_age$median_age <- as.numeric(med_age$median_age)
 ```
@@ -402,7 +417,6 @@ We replace the impractical column names with more practical column names.
 colnames(race)
 colnames(race) <- race[1,]
 race <- race[-1,]
-race$Id <- NULL
 ```
 
 We need to create several predictors with information provided by this dataset. To do so, we'll use several `dplyr` verbs.
@@ -411,7 +425,7 @@ Before getting into detail, note that the code below generates an error.
 
 ```{r, error=TRUE}
 race <- race %>%
-  rename("GEOID"=Id2,
+  rename("FIPS"=Id2,
          "Total"=`Estimate; Total:`,
          "W_only"=`Estimate; Total: - White alone`,
          "BA_only"=`Estimate; Total: - Black or African American alone`,
@@ -419,7 +433,7 @@ race <- race %>%
   mutate(Perc_W_only=W_only/Total,
          Perc_BA_only=BA_only/Total,
          Perc_A_only=A_only/Total) %>%
-  dplyr::select(GEOID,
+  dplyr::select(FIPS,
          Perc_W_only,
          Perc_BA_only,
          Perc_A_only)
@@ -440,7 +454,7 @@ Below we do just that. First, we rename the columns for practicality. Second, we
 
 ```{r}
 race <- race %>%
-  rename("GEOID"=Id2,
+  rename("FIPS"=Id2,
          "Total"=`Estimate; Total:`,
          "W_only"=`Estimate; Total: - White alone`,
          "BA_only"=`Estimate; Total: - Black or African American alone`,
@@ -452,7 +466,7 @@ race <- race %>%
   mutate(Perc_W_only=W_only/Total,
          Perc_BA_only=BA_only/Total,
          Perc_A_only=A_only/Total) %>%
-  dplyr::select(GEOID,
+  dplyr::select(FIPS,
          Perc_W_only,
          Perc_BA_only,
          Perc_A_only)
@@ -474,19 +488,18 @@ glimpse(ethnicity)
 colnames(ethnicity)
 colnames(ethnicity) <- ethnicity[1,]
 ethnicity <- ethnicity[-1,]
-ethnicity$Id <- NULL
 
 class(ethnicity$`Estimate; Total:`)
 class(ethnicity$`Estimate; Hispanic or Latino:`)
 
 ethnicity <- ethnicity %>%
-  rename("GEOID"=Id2,
+  rename("FIPS"=Id2,
          "Total"=`Estimate; Total:`,
          "Hispanic_Latino"=`Estimate; Hispanic or Latino:`) %>%
   mutate("Total"=as.numeric(Total),
          "Hispanic_Latino"=as.numeric(Hispanic_Latino)) %>%
   mutate(Perc_Hispanic_Latino=Hispanic_Latino/Total) %>%
-  dplyr::select(GEOID,
+  dplyr::select(FIPS,
          Perc_Hispanic_Latino)
 ```
 
@@ -521,7 +534,6 @@ We substitute the impractical column names with more practical column names.
 ```{r}
 colnames(med_inc) <- med_inc[1, ]
 med_inc <- med_inc[-1,]
-med_inc$Id <- NULL
 ```
 
 Now that we have practical column names, we can use regular expressions to search through the `dim(med_inc)[2]` columns. 
@@ -568,9 +580,9 @@ median_income_column <- colnames(med_inc)[which(str_detect(colnames(med_inc), "[
                           str_detect(colnames(med_inc), "[Ee]stimate"))][1]
 
 med_inc <- med_inc %>%
-  rename("GEOID"=Id2,
+  rename("FIPS"=Id2,
          "median_income"=paste(median_income_column)) %>%
-  dplyr::select(GEOID,
+  dplyr::select(FIPS,
          median_income)
 ```
 
@@ -597,7 +609,6 @@ head(perc_insured)[,1:5]
 colnames(perc_insured) <- perc_insured[1, ]
 
 perc_insured <- perc_insured[-1,]
-perc_insured$Id <- NULL
 
 sum(str_detect(colnames(perc_insured), "[Pp]ercent [Ii]nsured"))
 sum(str_detect(colnames(perc_insured), "[Ee]stimate"))
@@ -611,9 +622,9 @@ percent_insured_column <- colnames(perc_insured)[which(str_detect(colnames(perc_
                           str_detect(colnames(perc_insured), "[Ee]stimate"))][1]
 
 perc_insured <- perc_insured %>%
-  rename("GEOID"=Id2,
+  rename("FIPS"=Id2,
          "perc_insured"=paste(percent_insured_column)) %>%
-  dplyr::select(GEOID,
+  dplyr::select(FIPS,
          perc_insured)
 
 class(perc_insured$perc_insured)
@@ -621,8 +632,6 @@ perc_insured$perc_insured <- as.numeric(perc_insured$perc_insured)
 ```
 
 ## Underlying cause of death data
-
-*MICHAEL*: Must make decisions to use `NULL` clear. It seems as if these decisions are arbitrary. 
 
 Let's wrangle the mortality data. 
 
@@ -633,6 +642,8 @@ glimpse(ucd_heart)
 ```
 
 The crude rate included in the mortality data is calculated by dividing the number of deaths by a population that differs from that of the actual population of each county. For crude rates, the Centers for Disease Control exludes certain members of the population. We will be including all members of the population as an offset in our regression analysis using data from the American Community Survey, meaning we can get rid of the population estimates and crude rates provided in the dataset.
+
+**MICHAEL** Must provide explanation for why `NULL` is used here.
 
 ```{r}
 ucd_heart$Notes <- NULL
@@ -656,7 +667,7 @@ We rename the five digit reference codes and order the urbanization categories.
 
 ```{r}
 ucd_heart <- ucd_heart %>%
-  rename("GEOID"=`County Code`)
+  rename("FIPS"=`County Code`)
 
 levels(ucd_heart$`2013 Urbanization`)
 ucd_heart$`2013 Urbanization` <- factor(ucd_heart$`2013 Urbanization`,
@@ -693,23 +704,25 @@ It appears that there may be 78 rows with missing information. After confirming 
 
 ```{r}
 ucd_heart %>%
-  filter(is.na(Deaths) & is.na(GEOID))
+  filter(is.na(Deaths) & is.na(FIPS))
 
 ucd_heart <- ucd_heart %>%
-  filter(!(is.na(Deaths) & is.na(GEOID)))
+  filter(!(is.na(Deaths) & is.na(FIPS)))
 ```
 
 ## United States county boundaries
 
-*MICHAEL*: Why is EPSG 2163 used? Need to explain EPSG 
-
 Recall that we transformed the spatial data as soon as the data was imported. This is considered good practice. Depending on the projection of the spatial data, not doing so could have unintended consequences on the analysis.
 
-We transformed the spatial data to the *US National Atlas Equal Area* projection. This projection does a good job of representing the size of states. Some projections, such as the popular Mercator projection, make areas near the north and south poles appear disproportionately larger than areas further away. 
+We transformed the spatial data to the *US National Atlas Equal Area* projection. This projection does a good job of representing the size of states. Some projections, such as the popular Mercator projection, make areas near the north and south poles appear disproportionately larger than areas further away. In the Mercator projection, Greenland is about the same size as Africa, when the latter is in fact larger the former. 
+
+We use the `st_crs` function to determine the projection (coordinate reference system) used by the United States county boundaries imported. We set the projection immediately after importing the boundaries to the **US National Atlas Equal Area** projection, identifiable by an EPSG of 2163.
 
 ```{r}
 st_crs(map_sf)
+```
 
+```{r}
 dim(map_sf)
 
 glimpse(map_sf)
@@ -717,14 +730,11 @@ glimpse(map_sf)
 
 ```{r}
 map_sf <- map_sf %>%
-  left_join(ucd_heart, by="GEOID") %>%
-  left_join(total_pop, by="GEOID")
+  rename("FIPS"=GEOID) %>%
+  left_join(ucd_heart, by="FIPS")
 
 class(map_sf$Deaths)
-class(map_sf$Population)
 class(map_sf$`2013 Urbanization`)
-
-map_sf$Population <- as.numeric(map_sf$Population)
 ```
 
 ```{r}
@@ -762,7 +772,7 @@ FIPS_codes <- FIPS_codes %>%
          "area_name"=`Area Name (including legal/statistical area description)`) %>%
   sapply(as.character) %>%
   as.data.frame() %>% #Discuss how using sapply converted our dataframe into a matrix, what we are doing essentially is turning it back into a dataframe for manipulation
-  mutate("GEOID"=paste0(state_code,county_code))
+  mutate("FIPS"=paste0(state_code,county_code))
 
 FIPS_codes_dfs <- FIPS_codes %>%
   group_split(summary_level)
@@ -786,11 +796,12 @@ county_codes <- county_codes %>%
 
 covariates <- county_codes %>%
   left_join(state_codes, by="state_code") %>%
-  left_join(med_age, by="GEOID") %>%
-  left_join(race, by="GEOID") %>%
-  left_join(ethnicity, by="GEOID") %>%
-  left_join(med_inc, by="GEOID") %>%
-  left_join(perc_insured, by="GEOID")
+  left_join(total_pop, by="FIPS") %>%
+  left_join(med_age, by="FIPS") %>%
+  left_join(race, by="FIPS") %>%
+  left_join(ethnicity, by="FIPS") %>%
+  left_join(med_inc, by="FIPS") %>%
+  left_join(perc_insured, by="FIPS")
 ```
 
 *Now that we have the reference codes, we can update this section*
@@ -799,7 +810,7 @@ We can use information from the US Census Bureau to identify which codes corresp
 
 ```{r}
 map_sf <- map_sf %>%
-  left_join(covariates, by="GEOID")
+  left_join(covariates, by="FIPS")
 ```
 
 ```{r}
@@ -877,7 +888,7 @@ Indeed, if we look at the mortality data we find that what is now Oglala Lakota 
 
 ```{r}
 ucd_heart %>%
-  filter(GEOID==46113|GEOID==46102)
+  filter(FIPS==46113|FIPS==46102)
 ```
 
 To fix the error, we need to treat Oglala Lakota County (46102) as if it were Shannon County (46113) in what will become our analysis dataframe. 
@@ -886,11 +897,11 @@ To do this we overwrite data from Oglala Lakota County (46102) with data from Sh
 
 ```{r}
 oglala_correction <- ucd_heart %>%
-  filter(GEOID=="46113") %>%
-  mutate(GEOID="46102", County="Oglala Lakota")
+  filter(FIPS=="46113") %>%
+  mutate(FIPS="46102", County="Oglala Lakota")
 
 contiguous_us <- contiguous_us %>%
-  left_join(oglala_correction, by="GEOID") %>%
+  left_join(oglala_correction, by="FIPS") %>%
   mutate(Deaths=coalesce(Deaths.x, Deaths.y)) %>%
   mutate(County=coalesce(`County.x`,`County.y`)) %>%
   mutate(`2013 Urbanization`=coalesce(`2013 Urbanization.x`,`2013 Urbanization.y`)) %>%
@@ -907,8 +918,6 @@ contiguous_us <- contiguous_us %>%
 ```
 
 ## Lag Covariates
-
-**MICHAEL** This entire section needs to be checked. Changes were made to ensure that there was no trunctating effect on the analysis. 
 
 We need to construct the neighborhood matrix in a way that does includes all the relationships between counties of interest, otherwise we will lose valuable information and could bias our results.
 
@@ -989,7 +998,6 @@ We can also combine combine information from the nearest and next nearest adjace
 
 The code below uses the list of first and second order adjacent counties to do exactly that. 
 ```{r}
-# Cumulative 1st and 2nd order
 nb_cum_lag <- nblag_cumul(nb_sec_lag_list)
 
 FFct_nb_w <- nb2listw(nb_cum_lag,style="W", zero.policy = TRUE)
@@ -1009,8 +1017,6 @@ Below, we take an average of the first through tenth order adjacent counties.
 The end product is a map with much less variation. 
 
 ```{r}
-# Extreme case
-
 nb_ext_lag_list <- nblag(nbrs_us_cvd_sp_data_sp, maxlag = 10)
 nb_ext_cum_lag <- nblag_cumul(nb_ext_lag_list)
 
@@ -1045,10 +1051,14 @@ ggplot(us_cvd_sp_data) +
 
 We can think of this in a different way. What if we were instead analyzing data for the entire contiguous US? If we smoothed enough so that the entire northeast region had a very similar population per county, the county values would be very similar to the average of the region. This idea still holds when we are analyzing a smaller region: if we smooth values enough, the values we produce tend to reflect the average of the region we our analyzing.
 
-```{r}
-# This would be a great example to show an error if you don't remove the one value without population. The matrix algebra would not work! 
+We now need to develop an object so that, with matrix multiplication, we can compute the arithmetic mean of nearby counties. 
 
-contiguous_us <- contiguous_us %>% filter(is.na(Population)==FALSE)
+We won't be able to compute the arithmetic mean with missing values via matrix multiplication. We check below for missing values 
+```{r}
+sum(is.na(contiguous_us$Population))
+```
+
+```{r}
 contiguous_us_sp <- as(contiguous_us, 'Spatial')
 nbrs_contiguous_us_sp <- poly2nb(contiguous_us_sp, queen = TRUE)
 
@@ -1137,35 +1147,58 @@ ggplot(contiguous_us) +
   theme_OCS
 ```
 
-If we look at the Northeastern United States... *update*
+**MICHAEL** This needs to be included in the data wrangling portion. 
 
-**MICHAEL** Everything having to do with the subregion needs to be looked over again and possibly removed. 
+We need to create one last covariate representing the distance from the nearest large central metropolitan county in 10 km units. 
 
-```{r, eval=FALSE}
-ggplot(subset) +
-  geom_sf(aes(fill=`Crude Rate`), color="black", lwd=0.1) +
-  scale_fill_gradientn(colours = viridis(10)) +
-  ggtitle("Crude Rate", subtitle = "Northeastern United States") + 
-  theme_OCS
-```
-
-**Michael**: Must show the dimensions of the distance matrix. Distance matrix is a bit unclear at this moment to the audience of this case study.
+As done so previously, we check the projection of the spatial data we are working with. 
 
 ```{r}
 st_crs(us_cvd_sp_data)
+```
 
+We then create an dataframe of the large central metropolitan counties. 
+
+```{r}
 LC_metro1 <- us_cvd_sp_data %>% filter(`2013 Urbanization`=="Large Central Metro") %>% mutate(index=row_number())
 
 st_agr(us_cvd_sp_data) <- "constant"
 
 st_agr(LC_metro1) <- "constant"
+```
 
+We want to compute the shortest length between each county, the curve of which on a sphere is referred to as a geodesic. The length of the geodesic is also known as great circle distance. To calculate great circle distance, we need to transform our dataframe from a projected coordinate system based on a two-dimensional plane back to a geographic coordinate system based on the angles produced relative to earth's center. Additionally, we need to obtain the centroids of each county to calculate this distance. We can calculate the distance between boundary lines, but this would make it difficult to differentiate the distance between a county and itself from and the distance between a county and its neighbor. For this analysis, we will use county centroids to make this distinction. In a separate analysis, it may be more appropriate to calculate the distance between boundary lines.
+
+In the code below we transform both the spatial data with all counties and the spatial data with large metropolitan counties to the **World Geodetic System, 1984** coordinate system. We use the `st_centroid()` function by `sf` to obtain the centroids of each area-unit. 
+
+```{r}
 us_cvd_sp_data_geodetic <- st_transform(st_centroid(us_cvd_sp_data), 4326)
+
+dim(us_cvd_sp_data_geodetic)
 
 LC_metro1_geodetic <- st_transform(st_centroid(LC_metro1), 4326)
 
-cen_dist_matrix <- st_distance(x=us_cvd_sp_data_geodetic, y=LC_metro1_geodetic, which = "Great Circle")
+dim(LC_metro1_geodetic)
+```
 
+With then then calculate the distance between the centroids of all counties and large metropolitan counties using the `st_distance()` function by `sf`. Note that we specify that the distance calculated be great circle distance. 
+
+```{r}
+cen_dist_matrix <- st_distance(x=us_cvd_sp_data_geodetic, y=LC_metro1_geodetic, which = "Great Circle")
+```
+
+
+**MICHAEL** This needs to be finished. 
+
+The resulting object has `r dim(cen_dist_matrix)[1]` rows and `r dim(cen_dist_matrix)[2]` columns representing all counties and large metropolitan counties, respectively.
+
+```{r}
+dim(cen_dist_matrix)
+```
+
+We wanted to obtain the shorted
+
+```{r}
 us_cvd_sp_data <- us_cvd_sp_data %>% mutate(cen_dist_m=apply(data.frame(cen_dist_matrix), 1,min),
                          index=apply(cen_dist_matrix, 1, function(matrix_row) which(matrix_row==min(matrix_row)))) %>%
   mutate(cen_dist_10km=cen_dist_m/(1000*10))
@@ -1206,24 +1239,14 @@ ggplot(NE_cvd_sp_data) +
   geom_sf(aes(fill=Region))
 ```
 
-Now that we have calculated all of our spatial covariates, we can remove counties that are not part of our region of interest. 
-
-**MICHAEL** Check this.
-
-```{r, eval=FALSE}
-us_cvd_sp_data <- us_cvd_sp_data %>% filter(Region =="Region of Interest")
-```
-
-**MICHAEL** This needs to be updated to reflect "Great Circle" distance with the `st_distance` function as shown earlier in this case study. 
-
-**MICHAEL** Constant error shows below. This should be fixed and then explained when done earlier in this case study. The code fixing the warning/constant at the moment is not explained well and almost appears arbitrary. Must read some more about this. 
-
-**Michael**: Code below is suitable for distances but not deaths. Needs to be adapted for deaths. 
-
 ```{r}
 mortality_missing <- us_cvd_sp_data %>% filter(is.na(Deaths))
 
 mortality_complete <- us_cvd_sp_data %>% filter(!is.na(Deaths))
+
+st_agr(mortality_missing) <- "constant"
+
+st_agr(mortality_complete) <- "constant"
 
 mortality_missing_geodetic <- st_transform(st_centroid(mortality_missing), 4326)
 
@@ -1260,10 +1283,6 @@ apply(us_cvd_sp_data, 2, function(x)sum(is.na(x)))
 
 us_cvd_sp_data[which(is.na(us_cvd_sp_data$Deaths)),]
 ```
-
-**Michael** The math above for the death imputation needs to be checked as the crude rate is in a unit that could inadvertently multiply the number of deaths by a multiple of 10. 
-
-**Michael** There is an NA value that may cause a problem.
 
 ```{r}
 ggplot(us_cvd_sp_data) +
@@ -1995,12 +2014,10 @@ We need to be careful about over-interpreting correlograms, particularly when th
 We can test for autocorrelation globally by estimating the Moran's I statistic
 
 ```{r}
-moran.mc(us_cvd_sp_data$residuals6nb, listw =FFct_nb_w_test,nsim = 9999, zero.policy = TRUE)
+moran.mc(us_cvd_sp_data$residuals6nb, listw =FFct_nb_w_test,nsim = 999, zero.policy = TRUE)
 ```
 
-**MICHAEL**: This needs to be revisited. 
-
-Our Moran's I statistic is close to 0 and is not significant. Our model appears to have accounted for residual spatial autocorrelation.
+Our Moran's I statistic, although significant, is close to 0. Our model appears to have accounted for residual spatial autocorrelation.
 
 Residual spatial autocorrelation can have a large impact on the usefulness of our model. Had we not accounted for it, our standard errors would have been underestimated, amongst other things. Ultimately, such behavior in the residuals is indicative of unaccounted for information in a model.
 
