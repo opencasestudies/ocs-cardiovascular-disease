@@ -631,7 +631,7 @@ class(perc_insured$perc_insured)
 perc_insured$perc_insured <- as.numeric(perc_insured$perc_insured)
 ```
 
-## Underlying cause of death data
+### Underlying cause of death data
 
 Let's wrangle the mortality data. 
 
@@ -710,7 +710,7 @@ ucd_heart <- ucd_heart %>%
   filter(!(is.na(Deaths) & is.na(FIPS)))
 ```
 
-## United States county boundaries
+### United States county boundaries
 
 Recall that we transformed the spatial data as soon as the data was imported. This is considered good practice. Depending on the projection of the spatial data, not doing so could have unintended consequences on the analysis.
 
@@ -917,7 +917,7 @@ contiguous_us <- contiguous_us %>%
   mutate("Crude Rate"=round((Deaths/Population)*1e+05,3))
 ```
 
-## Lag Covariates
+### Lag Covariates
 
 We need to construct the neighborhood matrix in a way that does includes all the relationships between counties of interest, otherwise we will lose valuable information and could bias our results.
 
@@ -1167,7 +1167,7 @@ st_agr(us_cvd_sp_data) <- "constant"
 st_agr(LC_metro1) <- "constant"
 ```
 
-We want to compute the shortest length between each county, the curve of which on a sphere is referred to as a geodesic. The length of the geodesic is also known as great circle distance. To calculate great circle distance, we need to transform our dataframe from a projected coordinate system based on a two-dimensional plane back to a geographic coordinate system based on the angles produced relative to earth's center. Additionally, we need to obtain the centroids of each county to calculate this distance. We can calculate the distance between boundary lines, but this would make it difficult to differentiate the distance between a county and itself from and the distance between a county and its neighbor. For this analysis, we will use county centroids to make this distinction. In a separate analysis, it may be more appropriate to calculate the distance between boundary lines.
+We want to compute the shortest length between each county, the curve of which on a sphere is referred to as a geodesic. The length of the geodesic is also known as great circle distance. To calculate great circle distance, we need to transform our dataframe from a projected coordinate system based on a two-dimensional plane back to a geographic coordinate system based on the angles produced relative to earth's center. Additionally, we need to obtain the centroids of each county to calculate this distance. We can calculate the distance between boundary lines, but this would make it difficult to differentiate the distance between a county and itself from and the distance between a county and its neighbor. For this analysis, we will use county centroids to make this distinction. In a separate analysis, it may be more appropriate to calculate the distance between boundary lines. Note that the distance between boundaries will always be shorter than the distance between centroids.
 
 In the code below we transform both the spatial data with all counties and the spatial data with large metropolitan counties to the **World Geodetic System, 1984** coordinate system. We use the `st_centroid()` function by `sf` to obtain the centroids of each area-unit. 
 
@@ -1187,7 +1187,6 @@ With then then calculate the distance between the centroids of all counties and 
 cen_dist_matrix <- st_distance(x=us_cvd_sp_data_geodetic, y=LC_metro1_geodetic, which = "Great Circle")
 ```
 
-
 **MICHAEL** This needs to be finished. 
 
 The resulting object has `r dim(cen_dist_matrix)[1]` rows and `r dim(cen_dist_matrix)[2]` columns representing all counties and large metropolitan counties, respectively.
@@ -1196,7 +1195,9 @@ The resulting object has `r dim(cen_dist_matrix)[1]` rows and `r dim(cen_dist_ma
 dim(cen_dist_matrix)
 ```
 
-We wanted to obtain the shorted
+We want to obtain the distance between a given county and its nearest large metropolitan county. The matrix we've produced contains the distances between every county and every large metropolitan county. To obtain the distance to the nearest large metropolitan county for each county, we need to identify the smallest calculated distance for each county. This may seem trivial, but the distinction must be made. When we used the `st_distance` function, multiple distances were calculated for each county—we only need the smallest of the distances.
+
+To do this, we apply the `min()` function across rows using the `apply()` function. Note that we use the `data.frame()` function to convert the matrix to a `dataframe`. This is because the `apply()` function does not work on matrices. 
 
 ```{r}
 us_cvd_sp_data <- us_cvd_sp_data %>% mutate(cen_dist_m=apply(data.frame(cen_dist_matrix), 1,min),
@@ -1208,36 +1209,15 @@ LC_metro1 <- LC_metro1 %>% as.data.frame() %>% dplyr::select(index, county_name)
 us_cvd_sp_data <- us_cvd_sp_data %>% left_join(LC_metro1, by="index")
 ```
 
-*eval=FALSE*
-us_cvd_sp_data <- us_cvd_sp_data %>% mutate(index=st_nearest_feature(st_centroid(us_cvd_sp_data), st_centroid(LC_metro1)))
-*chunk ends*
+Our mortality data is left-censored. Death counts less than 10 are suppressed from public view to preserve the confidentiality of that information. As we are analyzing data, these suppressed values present themselves as missing values.
 
-```{r}
-# "" around numbers for the same reason as mentioned before
+Without getting into too much detail, there are many ways we can impute the missing mortality data. Because the data is not missing at random, there is no clear correct answer as to which method is best. Still, this isn't to say that all methods are equally valid.
 
-surrounding_states <- c("37", #NC
-                        "47", #TN
-                        "21", #KY
-                        "18", #IN
-                        "26" #MI
-                        )
+We will use nearest neighbor imputation for the purposes of this analysis. This method of imputation will likely produce less-valid, biased estimates than most other methods we could use for this analysis. In other analyses, however, this method could work well. 
 
-matrix_counties <- c(state_fp, surrounding_states)
+We'll multiply the population of a given county by the mean of the nearest available mortality rates to impute that county's death count. Since counts are whole numbers, all imputed values will be rounded to the nearest whole number. 
 
-NE_cvd_sp_data <- us_cvd_sp_data %>% 
-  filter(STATEFP %in% matrix_counties)
-
-NE_cvd_sp_data <- NE_cvd_sp_data %>%
-  mutate(Region = ifelse(STATEFP %in% state_fp, "Region of Interest", "Surrounding States"))
-
-```
-
-Let's look at what we did visually. 
-
-```{r}
-ggplot(NE_cvd_sp_data) + 
-  geom_sf(aes(fill=Region))
-```
+First, we separate our dataframe in two by whether an observation has a missing value.
 
 ```{r}
 mortality_missing <- us_cvd_sp_data %>% filter(is.na(Deaths))
@@ -1247,42 +1227,112 @@ mortality_complete <- us_cvd_sp_data %>% filter(!is.na(Deaths))
 st_agr(mortality_missing) <- "constant"
 
 st_agr(mortality_complete) <- "constant"
+```
 
+We then obtain county centroids which we then transform to the **World Geodetic System, 1984** coordinate system.
+
+```{r}
 mortality_missing_geodetic <- st_transform(st_centroid(mortality_missing), 4326)
 
 mortality_complete_geodetic <- st_transform(st_centroid(mortality_complete), 4326)
+```
 
+We then calculate the distance between each county with a missing value and each county with a non-missing value. 
+
+```{r}
 missing_mortality_matrix <- st_distance(x=mortality_missing_geodetic, y=mortality_complete_geodetic, which = "Great Circle")
+```
 
-missing_nearest_neighbors <- t(apply(missing_mortality_matrix, 1, order)[1:5, ])
+We use the `apply()` function in conjunction with the `order()` function to obtain the 5 nearest counties with non-missing values. We flip the dimensions of the object we produce with the `t()` function after determining that the dimensions are the reverse of what we need.
 
-dim(missing_nearest_neighbors)
-
-missing_nearest_neighbors <- as.data.frame(missing_nearest_neighbors)
-
-mortality_complete_no_geom <- mortality_complete
-
-st_geometry(mortality_complete_no_geom) <- NULL
-
-missing_nearest_neighbors <- apply(missing_nearest_neighbors, 1,function(x)(mortality_complete_no_geom[x,"Crude Rate"]))
-
-missing_nearest_neighbors <- sapply(missing_nearest_neighbors,"[[", "Crude Rate")
+```{r}
+missing_nearest_neighbors <- apply(missing_mortality_matrix, 1, order)[1:5, ]
 
 dim(missing_nearest_neighbors)
 
 missing_nearest_neighbors <- t(missing_nearest_neighbors)
 
+dim(missing_nearest_neighbors)
+```
+
+The object we've created is then made a dataframe with the `as.data.frame()` function and its geometry removed.
+
+```{r}
+missing_nearest_neighbors <- as.data.frame(missing_nearest_neighbors)
+```
+
+We already have an analysis dataframe with a geometry. Our goal is to append that analysis dataframe with new information. Removing the geometry of the dataframe with non-missing values allows us to treat the object as if it had no spatial data. This simplifies the wrangling process. Since we've made our calculations and have identified nearest neighbors, we have no need for a complex dataframe that can slow down computations or cause problems with the functions we would use otherwise. 
+
+```{r}
+mortality_complete_no_geom <- mortality_complete
+
+st_geometry(mortality_complete_no_geom) <- NULL
+```
+
+We now need to use our matrix that has indices for the nearest five non-missing values to extract those non-missing values. 
+
+Using the `apply()` function, we replace the indices of the non-missing values with the non-missing values we need. 
+
+```{r}
+missing_nearest_neighbors <- apply(missing_nearest_neighbors, 1,function(x)(mortality_complete_no_geom[x,"Crude Rate"]))
+```
+
+The resulting object is a list.
+
+```{r}
+class(missing_nearest_neighbors)
+```
+
+Let's look at the object more closely to understand its structure.
+
+```{r}
+missing_nearest_neighbors[[1]]
+```
+
+It appears that each element contains a `tibble` with a single column named `Crude Rate` with 5 observations.
+
+We can extract the the column from each tibble for ease of use with the `sapply()` function in conjunction with the `"[["` function, which subsets according to a column. 
+
+```{r}
+missing_nearest_neighbors <- sapply(missing_nearest_neighbors,"[[", "Crude Rate")
+```
+
+If we examine the resulting object more closely, we see that the dimensions are the reverse of what we need. Again, we use the `t()` function to flip the dimensions of the objection. The object is of `r class(missing_nearest_neighbors)` class. 
+
+```{r}
+dim(missing_nearest_neighbors)
+
+missing_nearest_neighbors <- t(missing_nearest_neighbors)
+
+class(missing_nearest_neighbors)
+```
+
+We calculate the mean of the non-missing values. We then impute the missing values by multiplying the mean of the `Crude Rate` by the `Population` and rounding to the nearest whole number. We divide by `1e+05` Before rounding to the nearest whole number to ensure that the units of our `Crude Rate` don't accidentally multiply our impute death counts by a factor of `1e+05`.
+
+```{r}
 mortality_missing <- mortality_missing %>%
   mutate("Crude Rate" = apply(missing_nearest_neighbors ,1, mean),
          Deaths = ifelse(is.na(Deaths), round((`Crude Rate` * Population)/1e+05, 0), Deaths)) 
+```
 
+The non-missing dataframe is then combined with the dataframe with now imputed values to update our analysis dataframe. 
+
+```{r}
 us_cvd_sp_data <- mortality_complete %>%
   rbind(mortality_missing)
-
-apply(us_cvd_sp_data, 2, function(x)sum(is.na(x)))
-
-us_cvd_sp_data[which(is.na(us_cvd_sp_data$Deaths)),]
 ```
+
+We then check for missing values across columns. 
+
+```{r}
+sum(apply(us_cvd_sp_data, 2, function(x)sum(is.na(x))))
+```
+
+Our analysis dataframe has no missing values. 
+
+Let's explore the data.
+
+The number of CVD deaths appears skewed. 
 
 ```{r}
 ggplot(us_cvd_sp_data) +
@@ -1292,6 +1342,8 @@ ggplot(us_cvd_sp_data) +
   theme_OCS
 ```
 
+We can visualize this distribution of CVD deaths by plotting the natural log of the number of CVD deaths + 1. Since the number of deaths can be 0, adding 1 prevents errors resulting from 0 death counts. 
+
 ```{r}
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=log(Deaths+1)), color="black", lwd=0.1) +
@@ -1299,6 +1351,8 @@ ggplot(us_cvd_sp_data) +
   labs(title = "log(Deaths+1)", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
   theme_OCS
 ```
+
+The same issue emerges when plotting the population of each county. 
 
 ```{r}
 ggplot(us_cvd_sp_data) +
@@ -1308,13 +1362,19 @@ ggplot(us_cvd_sp_data) +
   theme_OCS
 ```
 
+To resolve that issue we again plot the natural log of the value + 1. In this case, adding 1 might not be necessary.
+
 ```{r}
 ggplot(us_cvd_sp_data) +
-  geom_sf(aes(fill=log(Population)), color="black", lwd=0.1) +
+  geom_sf(aes(fill=log(Population + 1)), color="black", lwd=0.1) +
   scale_fill_gradientn(colours = viridis(5)) +
-  labs(title = "log(Population)", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  labs(title = "log(Population + 1)", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
   theme_OCS
 ```
+
+*MICHAEL* Ensure that the units are correct below. 
+
+We plot the mortality rate.
 
 ```{r}
 ggplot(us_cvd_sp_data) +
@@ -1324,12 +1384,16 @@ ggplot(us_cvd_sp_data) +
   theme_OCS
 ```
 
+We then plot the urbanization categories. Note that the distribution of these categories is similar to the distribution of the population. 
+
 ```{r}
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=`2013 Urbanization`), color="black", lwd=0.1) +
   labs(title = "2013 Urbanization", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
   theme_OCS
 ```
+
+We then plot the estimated percentage of people identifying only as White. 
 
 ```{r}
 ggplot(us_cvd_sp_data) +
@@ -1339,6 +1403,8 @@ ggplot(us_cvd_sp_data) +
   theme_OCS
 ```
 
+We plot the estimated percentage of people identifying only as Black. 
+
 ```{r}
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=Perc_BA_only), color="black", lwd=0.1) +
@@ -1346,6 +1412,8 @@ ggplot(us_cvd_sp_data) +
   labs(title = "Perc_B_only", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
   theme_OCS
 ```
+
+We plot the estimated percentage of people identifying only as Asian. 
 
 ```{r}
 ggplot(us_cvd_sp_data) +
@@ -1355,6 +1423,10 @@ ggplot(us_cvd_sp_data) +
   theme_OCS
 ```
 
+*MICHAEL* The definition of this must be revisited.
+
+We plot the estimated percentage of people identifying as Hispanic or Latino. 
+
 ```{r}
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=Perc_Hispanic_Latino), color="black", lwd=0.1) +
@@ -1362,6 +1434,8 @@ ggplot(us_cvd_sp_data) +
   labs(title = "Perc_Hispanic_Latino", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
   theme_OCS
 ```
+
+Lastly, we plot the percentage of people that are insured.
 
 ```{r}
 ggplot(us_cvd_sp_data) +
@@ -1371,7 +1445,17 @@ ggplot(us_cvd_sp_data) +
   theme_OCS
 ```
 
+Many of the variables in our analysis are spatially autocorrelated. We've confirmed this visually in our exploratory analysis. Because of this spatial autocorrelation, it is possible that with a combination of these variables, we can account for residual spatial autocorrelation in our data.
+
 # Data analysis 
+
+Let's analyze our data!
+
+In regression analysis, we make several assumptions. Violations of these assumptions can impact the validity of our model. With spatial data, one of the main concerns is that a model produced will violate the assumption that the residuals are autocorrelated. To ensure our model is not invalid, we employ methods to examine the level of autocorrelation in the residuals of a model. Note that lack of autocorrelation does not mean the model is valid; it only means that—with respect to the assumption of no residual autocorrelation—the model is not invalid. The model may still independently violate another assumption even if residual spatial autocorrelation is accounted for. 
+
+We need to determine a baseline of autocorrelation in the residuals. This will allow us to evaluate improvements in our model *with respect to the assumption of no residual spatial autocorrelation*. 
+
+To do this we fit a model with no covariates. By doing so, we can determine whether the presence of additional covariates accounts for any residual spatial autocorrelation present.
 
 ```{r}
 model0 <- glm(Deaths ~ 1, 
@@ -1379,7 +1463,13 @@ model0 <- glm(Deaths ~ 1,
             offset = log(Population),
             data=us_cvd_sp_data,
             na.action = na.exclude)
+```
 
+*MICHAEL* The choice of residuals here needs to be checked by an expert.
+
+To evaluate the extent of residual spatial autocorrelation, we append our analysis dataframe with the working residuals. This allows us to visually examine whether they are spatially autocorrelated. 
+
+```{r}
 us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("residuals0"=residuals.glm(model0, "response"))
 
@@ -1387,13 +1477,35 @@ us_cvd_sp_data %>%
   ggplot() +
   geom_sf(aes(fill=residuals0), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white", high="red")
+```
 
+*MICHAEL* This needs to be made more intuitive. This could be done by showing the output of each function.  
+
+Of course, visual inspection is always best supplemented with the appropriate statistical methods. In this case, we can create a spatial correlogram of Moran's I, an indicator of spatial autocorrelation.
+
+To do this we create a neighborhood list of class `nb` using the `poly2nb()` function. Row standardized spatial weights are then created from the resulting object with the `nb2list2()` function. These weights then allow us to compute values needed to plot a spatial correlogram with the `sp.correlogram()` function.
+
+*MICHAEL* Is removing the `NA` residuals here necessary. We should not have any. This could confuse the audience. 
+
+```{r}
 us_cvd_sp_data <- us_cvd_sp_data[is.na(us_cvd_sp_data$residuals0)==FALSE,]
 nbrs_us_cvd_sp_data_sp <- poly2nb(us_cvd_sp_data, queen = TRUE)
 FFct_nb_w_test <- nb2listw(nbrs_us_cvd_sp_data_sp,style="W", zero.policy = TRUE)
 
 moran_cor_m0 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals0,order=5,method="I",style="W", zero.policy = TRUE)
 ```
+
+We can then plot the spatial correlogram using the `plot()` function. Note that many of the values and bands are positive and do not intersect zero. This is indicative of positive spatial autocorrelation in our residuals, meaning the areas nearby another have similar residuals. Were the values negative, it would be indicative of negative spatial autocorrelation, meaning values nearby another are more dissimilar to one another. 
+
+As the number of spatial lags increases, there is less residual spatial autocorrelation.
+
+```{r}
+plot(moran_cor_m0,ylim=c(-0.1, 0.4),main="Residuals from model 0")
+```
+
+Ideally, our model will produce a spatial correlogram where Moran's I is constant and zero at each spatial lag. This would mean that there is no residual spatial autocorrelation. Our model would be satisfy at least one assumption of regression. 
+
+We fit with only focal effects, covariates that represent the values directly pertaining to the observations in this analysis.
 
 ```{r}
 model1 <- glm(Deaths ~ median_age + 
@@ -1408,7 +1520,11 @@ model1 <- glm(Deaths ~ median_age +
             offset = log(Population),
             data=us_cvd_sp_data,
             na.action = na.exclude)
+```
 
+We fit a model with focal and lag effects, covariates that represent nearby values. 
+
+```{r}
 model2 <- glm(Deaths ~ median_age + 
               median_age_lag + 
               Perc_W_only + 
@@ -1430,9 +1546,21 @@ model2 <- glm(Deaths ~ median_age +
             na.action = na.exclude)
 ```
 
-The presence of multicollinearity means that there is correlation between variables. However, high correlation does not mean that there is multicollinearity. 
+**MICHAEL** Must the below quote be cited or is this considered "widespread" knowledge in the field. 
 
-Let's produce some correlation matrices and compare them with computed variance inflation factors for our variables. 
+Because of Tobler's First Law of Geography—which states that "everything is related to everything else, but near things are more related than distant things" ((Tobler W., (1970) "A computer movie simulating urban growth in the Detroit region". Economic Geography, 46(Supplement): 234–240.))—it shouldn't be a surprise that focal effects and lag effects are often collinear.
+
+In a regression model, the presence of both can result in multicollinearity. Multicollinearity would violate another regression assumption. 
+
+Recall that the presence of multicollinearity means that there is correlation between variables. However, high correlation does not mean that there is multicollinearity. 
+
+Without fitting the models, we can screen for possible multicollinearity by creating correlation matrices between focal and lag effects. 
+
+Let's produce some correlation matrices.
+
+We will begin by producing a correlation matrice of the focal effects. 
+
+To simplify the output, we use the `select()` function to prevent the `cor()` function from calculating values that we don't need. 
 
 ```{r}
 melt_cor1 <- as.data.frame(us_cvd_sp_data) %>%
@@ -1444,11 +1572,17 @@ melt_cor1 <- as.data.frame(us_cvd_sp_data) %>%
          median_income,
          perc_insured) %>%
   cor() %>%
-  round(3) %>%
+  round(2) %>%
   reshape2::melt()
 
 colnames(melt_cor1)
+```
 
+We then produce a correlation matrix of with the resulting values, using the `scale_fill_gradient2` function to color code values for easier interpretation.
+
+The outout from the correlation matrix indicates that there is strong negative correlation between the percent of the population only identifying as Black and the percent of the population only identifying as Asian. 
+
+```{r}
 melt_cor1 %>%
   ggplot(aes(x=Var1, y=Var2, fill=value, label=value)) +
   geom_tile() +
@@ -1462,6 +1596,10 @@ melt_cor1 %>%
   ylab("")
 ```
 
+We repeat this process for lag effects.
+
+Again, there is a strong negative correlation between the percent of the population only identifying as Black and the percent of the population only identifying as Asian. Additionally, there is a moderate positive correlation between the percent of the population only identifying as Asian and neighboring median income.
+
 ```{r}
 melt_cor2 <- as.data.frame(us_cvd_sp_data) %>%
   dplyr::select(median_age_lag,
@@ -1472,7 +1610,7 @@ melt_cor2 <- as.data.frame(us_cvd_sp_data) %>%
          median_income_lag,
          perc_insured_lag) %>%
   cor() %>%
-  round(3) %>%
+  round(2) %>%
   reshape2::melt()
 
 colnames(melt_cor2)
@@ -1489,6 +1627,10 @@ melt_cor2 %>%
   xlab("") +
   ylab("")
 ```
+
+Lastly, we repeat the process for focal and lag effects. 
+
+As expected, we find that there is mostly a strong positive correlation between focal and lag effects
 
 ```{r}
 melt_cor3 <- as.data.frame(us_cvd_sp_data) %>%
@@ -1507,7 +1649,7 @@ melt_cor3 <- as.data.frame(us_cvd_sp_data) %>%
          median_income_lag,
          perc_insured_lag) %>%
   cor() %>%
-  round(3) %>%
+  round(2) %>%
   reshape2::melt()
 
 colnames(melt_cor3)
@@ -1516,7 +1658,7 @@ melt_cor3 %>%
   ggplot(aes(x=Var1, y=Var2, fill=value, label=value)) +
   geom_tile() +
   scale_fill_gradient2(low="red", mid="white", high="green") + 
-  geom_text(size=2) + 
+  geom_text(size=3) + 
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
         axis.text.y = element_text(angle = 45, vjust = 1, hjust = 1)) +
@@ -1525,20 +1667,18 @@ melt_cor3 %>%
   ylab("")
 ```
 
+**MICHAEL** Cite the paper sent to Leah below. 
+
+We can use the `vif()` function to evaluate whether there is multicollinearity in the models produced. `GVIF^(1/(2*Df))` values are more appropriate for the particular models we are employing. `GVIF^(1/(2*Df))` values should be squared and interpreted as one would interpret `VIF` values.
+
 ```{r}
 vif(model1)
 vif(model2)
 ```
 
-```{r}
-sum(is.na(us_cvd_sp_data$Deaths))
-length(model1$residuals)
-length(model2$residuals)
-```
+We repeat the process we employed earlier, saving the residuals of each model to the analysis dataframe and calculating the values to plot the spatial correlogram. Note that we do not need to produce the neighborhood list nor calculate row standardized spatial weights; that output will remain the same throughout our analysis—only the distribution and values of residuals are subject to change across models. 
 
 ```{r}
-#Are the residuals being plotted correctly? 
-
 us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("residuals1"=residuals.glm(model1, "response"))
 
@@ -1557,8 +1697,26 @@ us_cvd_sp_data %>%
 
 moran_cor_m1 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals1,order=5,method="I",style="W", zero.policy = TRUE)
 moran_cor_m2 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals2,order=5,method="I",style="W", zero.policy = TRUE)
-plot(moran_cor_m1,ylim=c(-0.2, 0.4),main="Residuals from model 1")
-plot(moran_cor_m2,ylim=c(-0.2, 0.4),main="Residuals from model 2")
+```
+
+We plot the spatial correlograms for the empty model and model 1.
+
+It appears that the empty model may have less spatial autocorrelation than model 1.
+
+```{r}
+par(mfrow=c(1,2))
+plot(moran_cor_m0,ylim=c(-0.1, 0.4),main="Residuals from model 0")
+plot(moran_cor_m1,ylim=c(-0.1, 0.4),main="Residuals from model 1")
+```
+
+We then plot the spatial correlograms for model 1 and model 2.
+
+Model 2 appears to be a slight improvement from model 1. 
+
+```{r}
+par(mfrow=c(1,2))
+plot(moran_cor_m1,ylim=c(-0.1, 0.4),main="Residuals from model 1")
+plot(moran_cor_m2,ylim=c(-0.1, 0.4),main="Residuals from model 2")
 ```
 
 us_cvd_sp_data <- us_cvd_sp_data[is.na(us_cvd_sp_data$residuals1)==FALSE,]
@@ -1576,7 +1734,10 @@ us_cvd_sp_data %>% filter(ID %in% FFct_nb_w_test[[2]][[773]]) %>% dplyr::select(
 
 
 FFct_nb_w_test[[2]][[773]]
-#Code checks out! 
+
+Code checks out! 
+
+There appears to be overdispersion present in both model 1 and model 2. 
 
 ```{r}
 chi_square_model1 = sum(residuals(model1, type = "pearson")^2)
@@ -1598,7 +1759,7 @@ p_value_model2 = 1-pchisq(chi_square_model2, degrees_freedom_model2)
 paste("Pearson goodness of fit = ", round(chi_square_model2,2), ", df = ", degrees_freedom_model2, ", p-value = ", round(p_value_model2,10))
 ```
 
-Both models show overdispersion. 
+We'll fit the same covariates against our outcome using a negative binomial model. This should relax the variance-mean assumption in Poisson models. 
 
 ```{r}
 model1_nb <- glm.nb(Deaths ~ median_age +
@@ -1633,10 +1794,16 @@ model2_nb <- glm.nb(Deaths ~ median_age +
             na.action = na.exclude)
 ```
 
+Model 1 may have some multicollinearity that should be noted. Model 2 may have some multicollinearity that could be of concern. Remember: `GVIF^(1/(2*Df))` values should be squared and then interpreted as `VIF` values. Although there is no absolute guideline for `VIF` values, `VIF` values of about 5 should be noted and `VIF` values of about 10 or more should be concerning. If we put this in terms of `GVIF^(1/(2*Df))` values, `GVIF^(1/(2*Df))` values of about 2.25 should be noted and `GVIF^(1/(2*Df))` values of about 3.15 or more should be concerning. 
+
 ```{r}
 vif(model1_nb)
 vif(model2_nb)
 ```
+
+If we think back at our correlation matrices, the same variables that showed strong correlation appear to exhibit multicollinearity in our regression models. Again, multicollinearity signifies correlation but not vice versa. 
+
+We repeat the process of saving the residuals to our analysis dataframe and calculating the values for the spatial correlogram.
 
 ```{r}
 us_cvd_sp_data <- us_cvd_sp_data %>%
@@ -1657,46 +1824,43 @@ us_cvd_sp_data %>%
 
 moran_cor_m1nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals1nb,order=5,method="I",style="W", zero.policy = TRUE)
 moran_cor_m2nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals2nb,order=5,method="I",style="W", zero.policy = TRUE)
-
-par(mfrow=c(2,2))
-
-plot(moran_cor_m1,ylim=c(-0.2, 0.4),main="Residuals from model 1")
-plot(moran_cor_m2,ylim=c(-0.2, 0.4),main="Residuals from model 2")
-plot(moran_cor_m1nb,ylim=c(-0.2, 0.4),main="Residuals from model 1, nb")
-plot(moran_cor_m2nb,ylim=c(-0.2, 0.4),main="Residuals from model 2, nb")
 ```
+
+We then compare the negative binomial models produced to our empty model. 
+
+The lag effects in the negative binomial iteration of model 2 appear to better account for residual spatial autocorrelation.
+
+```{r}
+par(mfrow=c(1,2))
+plot(moran_cor_m0,ylim=c(-0.1, 0.4),main="Residuals from model 0")
+plot(moran_cor_m1nb,ylim=c(-0.1, 0.4),main="Residuals from model 1, nb")
+
+par(mfrow=c(1,2))
+plot(moran_cor_m1nb,ylim=c(-0.1, 0.4),main="Residuals from model 1, nb")
+plot(moran_cor_m2nb,ylim=c(-0.1, 0.4),main="Residuals from model 2, nb")
+```
+
+**MICHAEL** Must incorporate distance from the nearest large central metropolitan county as part of the exploratory analysis. 
+
+Lastly, we create a simpler model without lag effects. This model will instead use the nearest large central metropolitan county and its distance as covariates. During our exploratory analysis, you may have noticed that the crude rate map was similar to our map of distance from the nearest large central metropolitan county, with low value clusters situated in urban regions of the United States. This similarity could have emerged for a variety of reasons—and may possibly be spurious. However, it's widely known that Rural Americans experience greater cardiovascular disease mortality rates. Furthermore, distance almost always plays a role in spatial applications.
+
+Recall Tobler's First Law of Geography. It could be that large central metropolitan counties have protective factors. Assuming that counties nearer large central metropolitan counties are more similar to counties further away, it would make sense that such a covariate could explain much of the variability in the data. 
+
+*MICHAEL* Need to change/order the levels of the nearest large central metropolitan county.
 
 ```{r}
 model3 <- glm(Deaths ~ median_age + 
-              Perc_W_only + 
-              Perc_A_only +
-              Perc_Hispanic_Latino + 
-              median_income +
-              perc_insured + 
-              `2013 Urbanization`, 
-            family="poisson",
-            offset = log(Population),
-            data=us_cvd_sp_data,
-            na.action = na.exclude)
-
-model4 <- glm(Deaths ~ median_age + 
-              median_age_lag + 
-              Perc_W_only + 
-              Perc_W_only_lag +
-              Perc_A_only + 
-              Perc_A_only_lag + 
-              Perc_Hispanic_Latino + 
-              Perc_Hispanic_Latino_lag + 
-              median_income +
-              median_income_lag +
+              median_income + + 
               perc_insured +
-              perc_insured_lag + 
-                `2013 Urbanization`, 
+                cen_dist_10km +
+                nearest_LC_metro,
             family="poisson",
             offset = log(Population),
             data=us_cvd_sp_data,
             na.action = na.exclude)
 ```
+
+We calculate the values needed for the spatial correlogram. 
 
 ```{r}
 us_cvd_sp_data <- us_cvd_sp_data %>%
@@ -1707,19 +1871,10 @@ us_cvd_sp_data %>%
   geom_sf(aes(fill=residuals3), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white" ,high="red")
 
-us_cvd_sp_data <- us_cvd_sp_data %>%
-  mutate("residuals4"=residuals.glm(model4, "response"))
-
-us_cvd_sp_data %>%
-  ggplot() +
-  geom_sf(aes(fill=residuals4), color="transparent") + 
-  scale_fill_gradient2(low="green", mid="white" ,high="red")
-
 moran_cor_m3 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals3,order=5,method="I",style="W", zero.policy = TRUE)
-moran_cor_m4 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals4,order=5,method="I",style="W", zero.policy = TRUE)
 ```
 
-Does the next set of models exhibit overdispersion?
+We check for overdispersion.
 
 ```{r}
 chi_square_model3 = sum(residuals(model3, type = "pearson")^2)
@@ -1731,198 +1886,10 @@ p_value_model3 = 1-pchisq(chi_square_model3, degrees_freedom_model3)
 paste("Pearson goodness of fit = ", round(chi_square_model3,2), ", df = ", degrees_freedom_model3, ", p-value = ", round(p_value_model3,10))
 ```
 
-```{r}
-chi_square_model4 = sum(residuals(model4, type = "pearson")^2)
-
-degrees_freedom_model4 = model4$df.residual
-
-p_value_model4 = 1-pchisq(chi_square_model4, degrees_freedom_model4)
-
-paste("Pearson goodness of fit = ", round(chi_square_model4,2), ", df = ", degrees_freedom_model4, ", p-value = ", round(p_value_model4,10))
-```
+We fit a negative binomial model to relax the mean-variance assumption. 
 
 ```{r}
 model3_nb <- glm.nb(Deaths ~ median_age + 
-              Perc_W_only + 
-              Perc_A_only + 
-              Perc_Hispanic_Latino + 
-              median_income +
-              perc_insured + 
-              `2013 Urbanization` +
-                offset(log(Population)),
-            data=us_cvd_sp_data,
-            na.action = na.exclude)
-
-model4_nb <- glm.nb(Deaths ~ median_age + 
-              median_age_lag + 
-              Perc_W_only + 
-              Perc_W_only_lag + 
-              Perc_A_only + 
-              Perc_A_only_lag + 
-              Perc_Hispanic_Latino + 
-              Perc_Hispanic_Latino_lag + 
-              median_income +
-              median_income_lag +
-              perc_insured +
-              perc_insured_lag + 
-              `2013 Urbanization` +
-                offset(log(Population)),
-            data=us_cvd_sp_data,
-            na.action = na.exclude)
-```
-
-```{r}
-vif(model3_nb)
-vif(model4_nb)
-```
-
-```{r}
-us_cvd_sp_data <- us_cvd_sp_data %>%
-  mutate("residuals3nb"=residuals.glm(model3_nb, "response"))
-
-us_cvd_sp_data %>%
-  ggplot() +
-  geom_sf(aes(fill=residuals3nb), color="transparent") + 
-  scale_fill_gradient2(low="green", mid="white" ,high="red")
-
-us_cvd_sp_data <- us_cvd_sp_data %>%
-  mutate("residuals4nb"=residuals.glm(model4_nb, "response"))
-
-us_cvd_sp_data %>%
-  ggplot() +
-  geom_sf(aes(fill=residuals4nb), color="transparent") + 
-  scale_fill_gradient2(low="green", mid="white" ,high="red")
-
-moran_cor_m3nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals3nb,order=5,method="I",style="W", zero.policy = TRUE)
-moran_cor_m4nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals4nb,order=5,method="I",style="W", zero.policy = TRUE)
-
-par(mfrow=c(2,2))
-
-plot(moran_cor_m3,ylim=c(-0.2, 0.4),main="Residuals from model 3")
-plot(moran_cor_m4,ylim=c(-0.2, 0.4),main="Residuals from model 4")
-plot(moran_cor_m3nb,ylim=c(-0.2, 0.4),main="Residuals from model 3, nb")
-plot(moran_cor_m4nb,ylim=c(-0.2, 0.4),main="Residuals from model 4, nb")
-```
-
-```{r}
-model5 <- glm(Deaths ~ median_age + 
-              median_age_lag2 + 
-              Perc_W_only + 
-              Perc_W_only_lag2 +
-              Perc_A_only + 
-              Perc_A_only_lag2 + 
-              Perc_Hispanic_Latino + 
-              Perc_Hispanic_Latino_lag2 + 
-              median_income +
-              median_income_lag2 +
-              perc_insured +
-              perc_insured_lag2 + 
-                `2013 Urbanization`, 
-            family="poisson",
-            offset = log(Population),
-            data=us_cvd_sp_data,
-            na.action = na.exclude)
-
-us_cvd_sp_data <- us_cvd_sp_data %>%
-  mutate("residuals5"=residuals.glm(model5, "response"))
-
-us_cvd_sp_data %>%
-  ggplot() +
-  geom_sf(aes(fill=residuals5), color="transparent") + 
-  scale_fill_gradient2(low="green", mid="white" ,high="red")
-```
-
-```{r}
-chi_square_model5 = sum(residuals(model5, type = "pearson")^2)
-
-degrees_freedom_model5 = model5$df.residual
-
-p_value_model5 = 1-pchisq(chi_square_model5, degrees_freedom_model5)
-
-paste("Pearson goodness of fit = ", round(chi_square_model5,2), ", df = ", degrees_freedom_model5, ", p-value = ", round(p_value_model5,10))
-```
-
-```{r}
-model5_nb <- glm.nb(Deaths ~ median_age + 
-              median_age_lag2 + 
-              Perc_W_only + 
-              Perc_W_only_lag2 + 
-              Perc_A_only + 
-              Perc_A_only_lag2 + 
-              Perc_Hispanic_Latino + 
-              Perc_Hispanic_Latino_lag2 + 
-              median_income +
-              median_income_lag2 +
-              perc_insured +
-              perc_insured_lag2 + 
-              `2013 Urbanization` +
-                offset(log(Population)),
-            data=us_cvd_sp_data,
-            na.action = na.exclude)
-
-us_cvd_sp_data <- us_cvd_sp_data %>%
-  mutate("residuals5nb"=residuals.glm(model5_nb, "response"))
-
-us_cvd_sp_data %>%
-  ggplot() +
-  geom_sf(aes(fill=residuals5nb), color="transparent") + 
-  scale_fill_gradient2(low="green", mid="white" ,high="red")
-```
-
-```{r}
-moran_cor_m5 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals5,order=5,method="I",style="W", zero.policy = TRUE)
-moran_cor_m5nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals5nb,order=5,method="I",style="W", zero.policy = TRUE)
-
-par(mfrow=c(1,2))
-
-plot(moran_cor_m5,ylim=c(-0.2, 0.4),main="Residuals from model 5")
-plot(moran_cor_m5nb,ylim=c(-0.2, 0.4),main="Residuals from model 5, nb")
-```
-
-```{r}
-model6 <- glm(Deaths ~ median_age + 
-              median_age_lag2 + 
-              Perc_W_only + 
-              Perc_W_only_lag2 +
-              Perc_A_only + 
-              Perc_A_only_lag2 + 
-              Perc_Hispanic_Latino + 
-              Perc_Hispanic_Latino_lag2 + 
-              median_income +
-              median_income_lag2 +
-              perc_insured +
-              perc_insured_lag2 + 
-                `2013 Urbanization`,
-              Population_lag,
-            family="poisson",
-            offset = log(Population),
-            data=us_cvd_sp_data,
-            na.action = na.exclude)
-
-us_cvd_sp_data <- us_cvd_sp_data %>%
-  mutate("residuals6"=residuals.glm(model6, "response"))
-
-us_cvd_sp_data %>%
-  ggplot() +
-  geom_sf(aes(fill=residuals6), color="transparent") + 
-  scale_fill_gradient2(low="green", mid="white" ,high="red")
-
-moran_cor_m6 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals6,order=5,method="I",style="W", zero.policy = TRUE)
-```
-
-```{r}
-chi_square_model6 = sum(residuals(model6, type = "pearson")^2)
-
-degrees_freedom_model6 = model6$df.residual
-
-p_value_model6 = 1-pchisq(chi_square_model6, degrees_freedom_model6)
-
-paste("Pearson goodness of fit = ", round(chi_square_model6,2), ", df = ", degrees_freedom_model6, ", p-value = ", round(p_value_model6,10))
-```
-
-```{r}
-#not the same as model6
-model6_nb <- glm.nb(Deaths ~ median_age + 
               median_income + + 
               perc_insured +
                 cen_dist_10km +
@@ -1932,20 +1899,22 @@ model6_nb <- glm.nb(Deaths ~ median_age +
             na.action = na.exclude)
 ```
                 
+We then plot the spatial correlagrams of both models.          
+                
 ```{r}
 
 us_cvd_sp_data <- us_cvd_sp_data %>%
-  mutate("residuals6nb"=residuals.glm(model6_nb, "response"))
+  mutate("residuals3nb"=residuals.glm(model3_nb, "response"))
 
 us_cvd_sp_data %>%
   ggplot() +
-  geom_sf(aes(fill=residuals6nb), color="transparent") + 
+  geom_sf(aes(fill=residuals3nb), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white" ,high="red")
 
-moran_cor_m6nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals6nb,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m3nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals3nb,order=5,method="I",style="W", zero.policy = TRUE)
 
-plot(moran_cor_m6,ylim=c(-0.2, 0.4),main="Residuals from model 6")
-plot(moran_cor_m6nb,ylim=c(-0.2, 0.4),main="Residuals from model 6, nb")
+plot(moran_cor_m3,ylim=c(-0.1, 0.4),main="Residuals from model 3")
+plot(moran_cor_m3nb,ylim=c(-0.1, 0.4),main="Residuals from model 3, nb")
 ```
 
 ```{r}
@@ -1956,30 +1925,26 @@ us_cvd_sp_data %>%
 ```
 
 ```{r}
-vif(model6_nb)
+vif(model3_nb)
 ```
 
 ```{r}
-ggplot(us_cvd_sp_data, aes(x=Population, y=residuals6nb, label=County, color=`2013 Urbanization`)) +
+ggplot(us_cvd_sp_data, aes(x=Population, y=residuals3nb, label=County, color=`2013 Urbanization`)) +
   geom_point() + 
   geom_text()
 ```
 
 ```{r}
-morans_i <- c(moran_cor_m1nb["res"][[1]][,1],
-      moran_cor_m2nb["res"][[1]][,1],
-      moran_cor_m3nb["res"][[1]][,1],
-      moran_cor_m4nb["res"][[1]][,1],
-      moran_cor_m5nb["res"][[1]][,1],
-      moran_cor_m6nb["res"][[1]][,1]
-      )
+morans_i <- c(moran_cor_m0["res"][[1]][,1],
+              moran_cor_m1nb["res"][[1]][,1],
+              moran_cor_m2nb["res"][[1]][,1],
+              moran_cor_m3nb["res"][[1]][,1]
+              )
 
-model <- c(rep("M1NB",5),
-           rep("M2NB",5),
-           rep("M3NB",5),
-           rep("M4NB",5),
-           rep("M5NB",5),
-           rep("M6NB",5)
+model <- c(rep("Empty Model",5),
+           rep("Model 1, NB",5),
+           rep("Model 2, NB",5),
+           rep("Model 3, NB",5)
            )
 
 lag <- rep(seq(1,5,by=1),6)
@@ -1988,12 +1953,12 @@ cor_df <- as.data.frame(cbind(morans_i, model, lag))
 
 cor_df$morans_i <- as.numeric(as.character(cor_df$morans_i))
 
-cor_df$model <- factor(cor_df$model, levels=c("M1NB",
-                                                 "M2NB",
-                                                 "M3NB",
-                                                 "M4NB",
-                                                 "M5NB",
-                                              "M6NB"))
+cor_df$model <- factor(cor_df$model, levels=c("Empty Model",
+                                              "Model 1, NB",
+                                              "Model 2, NB",
+                                              "Model 3, NB"
+                                              )
+                       )
 
 cor_df$lag <- as.numeric(as.character(cor_df$lag))
 
@@ -2005,7 +1970,7 @@ cor_df %>%
   ggtitle("Moran's I Correlogram by Model", subtitle = "Our models do not account for the spatial autocorrelation of our autocome.") + 
   facet_grid(.~model) + 
   xlim(1,5) + 
-  ylim(-0.2,0.4) + 
+  ylim(-0.1, 0.4) + 
   theme_OCS
 ```
 
@@ -2014,7 +1979,7 @@ We need to be careful about over-interpreting correlograms, particularly when th
 We can test for autocorrelation globally by estimating the Moran's I statistic
 
 ```{r}
-moran.mc(us_cvd_sp_data$residuals6nb, listw =FFct_nb_w_test,nsim = 999, zero.policy = TRUE)
+moran.mc(us_cvd_sp_data$residuals3nb, listw =FFct_nb_w_test,nsim = 999, zero.policy = TRUE)
 ```
 
 Our Moran's I statistic, although significant, is close to 0. Our model appears to have accounted for residual spatial autocorrelation.
@@ -2022,7 +1987,7 @@ Our Moran's I statistic, although significant, is close to 0. Our model appears 
 Residual spatial autocorrelation can have a large impact on the usefulness of our model. Had we not accounted for it, our standard errors would have been underestimated, amongst other things. Ultimately, such behavior in the residuals is indicative of unaccounted for information in a model.
 
 ```{r}
-summary(model6_nb)
+summary(model3_nb)
 ```
 
 # Summary of results
