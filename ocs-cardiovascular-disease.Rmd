@@ -13,28 +13,9 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Questions
-
-I have an R question and then a stats question.
-
-We are using an offset, Population, for these models. We are modeling rates.
-
-In the models with an offset, the residuals provided by R via `residuals()` are rates, correct? 
-
-When examining these residuals, must we divide the fitted counts by the offset to obtain a rate?
-
-
-# Details
-
-provide `tmap` example 
-
-reinforce weight matrix multiple to average--Leah Meeting 
-
-explanation of edge vs centroid.
-
-explain why geometries must be constant. 
-
-Need to explain EPSG codes. check out [this website](http://support.virtual-surveyor.com/en/support/solutions/articles/1000261353-what-is-an-epsg-code-)
+```{r, echo=FALSE}
+set.seed(9999)
+```
 
 ```{r, echo=FALSE}
 library(knitr)
@@ -50,9 +31,7 @@ Cardiovascular diseases are currently the leading cause of death in the United S
 
 ## Analysis goal
 
-We will identify county-level characteristics that are associated with cardiovascular disease mortality in the Northeastern United States.
-
-**MICHAEL** This needs to be revisited to include something about the assumptions made about non-spatial models and how we account for when these assumptions fail in the following case study.
+We will identify county-level characteristics that are associated with cardiovascular disease mortality rates in the Northeastern United States.
 
 ## Learning objectives
 
@@ -67,9 +46,9 @@ The learning objectives include:
 
 The libraries used in this case study will be:
 
-+ `ggplot2`, for creating beautiful visualizations with ready data
++ `ggplot2`, for creating beautiful visualizations
 
-+ `cowplot`, for extending ggplot functionality
++ `cowplot`, for presenting multiple `ggplot2` visualizations 
 
 + `kableExtra`, for creating beautiful HTML tables
 
@@ -77,7 +56,7 @@ The libraries used in this case study will be:
 
 + `reshape2`, for simplifying correlation matrices
 
-+ `tidyverse`, for data wrangling and summarization, amongst other things, from a number of packages
++ `tidyverse`, a collection of packages for data wrangling and summarization
 
 + `readxl`, for importing Excel data
 
@@ -131,11 +110,11 @@ library(car)
 library(cowplot)
 ```
 
-## Boundaries and Reference Codes
+## Boundaries and reference Codes
 
 We'll begin by importing the United States county boundaries data. Note that we are importing two different files. We must determine which of the two files to use. These two files have different resolutions.
 
-The spatial data format we will be using for our analysis is known as the shapefile format. Shapefiles are a file format originated by Esri, the developers of the popular ArcGIS. Shapefiles can store a wide array of spatial data and are the most widely used format for spatial data. 
+The spatial data format we will be using for our analysis is known as the shapefile format. Shapefiles are a file format originated by Esri, the developers of the popular `ArcGIS`. Shapefiles can store a wide array of spatial data and are the most widely used format for spatial data. 
 
 Using `read_sf` by the `sf` package, we can read in the shapefiles for our analysis. 
 
@@ -201,7 +180,7 @@ ggplot() +
         ymax = 50) +
   geom_segment(aes(x = x1, y = y1, xend = x2, yend = y2), data = arrowA, lineend = "round") +
   geom_segment(aes(x = x1, y = y1, xend = x2, yend = y2), data = arrowB, lineend = "round") +
-  labs(title = "Impact of resolution of spatial data on shape produced", subtitle = "Smaller shapefile in blue, larger shapefile in red") +
+  labs(title = "Impact of File Resolution on Shape Produced", subtitle = "Smaller shapefile in blue, larger shapefile in red") +
   theme_void()
 ```
 
@@ -209,7 +188,7 @@ We see that for certain applications the use of the larger shapefile is not only
 
 Since we are not conducting an analysis that could introduce bias or cause misclassification as a result of the shapefilefile we use, we are free to use the smaller of the two shapefiles. The smaller shapefile requires less computational resources and produces almost identical maps at the state level and beyond, making it preferable for this analysis.
 
-Often, analyzing data thoroughly can be severely hindered by the computational resources available. This is especially true with spatial applications of `R`. Unless an analysis requires that those computational resources be used, it is often more efficient and effective to proceed with an analysis in a way that is less computationally-intensive.
+Often, analyzing data thoroughly can be severely hindered by the computational resources available. This is especially true when working with spatial data in `R`. Unless an analysis requires that those computational resources be used, it is often more efficient and effective to proceed with an analysis in a way that is less computationally-intensive.
 
 Again, because our analysis is not dependent on the absolute precision of the maps we use, but rather the relative location of boundaries, we are able to use the smaller, lower-resolution file. If, for example, our analysis involved the aggregation of points inside a county, we would not have this luxury; the lower resolution would likely lead to points near the true boundary being misclassified as being within the borders of a nearby county. 
 
@@ -299,23 +278,15 @@ Now that we've imported the data from both of our data sources, we can wrangle t
 
 # Data wrangling
 
-We cannot wrangle a dataset for a specific purpose without first developing a clear idea of its components. This is particularly true when there are many columns. 
-
-The `head()` and `glimpse()` functions from the `utils` and `tidyverse` packages are particularly useful for that purpose. Each function has an advantage and disadvantage over the other. The `head()` function returns the first several rows of data; this output, while very easy to read for datasets with few dimensions, is too messy to interpret in the presence of more than a handful of columns of data. The `glimpse()` function returns the first several rows for each and every column of a dataframe; this output, while thorough, can generate a lot of output that is difficult to sift through.
-
-Rather than use one exclusively, we will use whichever is more beneficial for the dataset we are working with.
-
-Using the `dim()` function from `base`, we can make that determination. 
-
-If a function has few dimensions, we will use the `head()` function. If a function has more than 5 columns, we will use the `glimpse()` function. If a function too many dimensions to sift through reasonably, we will use regular expressions to identify our variable of interest. 
-
 ## ACS data
 
 ### Codebook
 
-We'll begin by wrangling the American Community Survey data. American Community Survey data is extremely well-maintained. The data has a large amount of supporting documentation. As good practice we will consult the supporting documentation. 
+We'll begin by wrangling the American Community Survey data. Each dataframe we've downloaded will first be prepared. We will join the prepared dataframes to the analysis dataframe only after each of our dataframes has been prepared.
 
-We will be using the tableshells for the survey, codebooks of sorts, to help us wrangle the data for this analysis. The table shells documents contain the variables with accompanying codes for tables produced from information gathered by the American Community Survey. [The document can be found here for download.](https://www2.census.gov/programs-surveys/acs/tech_docs/table_shells/2017/?#)
+American Community Survey data is extremely well-maintained. The data has a large amount of supporting documentation. As good practice we will consult the supporting documentation. 
+
+We will be using the tableshells for the survey, codebooks of sorts, to help us wrangle the data for this analysis. The table shells documents contain approximate names and line numbers of the variables used to produce tables produced from information gathered by the American Community Survey. [The document can be found here for download.](https://www2.census.gov/programs-surveys/acs/tech_docs/table_shells/2017/?#)
 
 We'll import the table shell for each dataset we imported. Since
 
@@ -337,7 +308,9 @@ colnames(S2701)
 
 We only need two columns from each table shell, the line number and the description for that line number. These correspond to the approximate column number and the variable name for each dataset.
 
-We'll extract the line number and description from each and add a third column that will help us identify the dataset to which the line number and description correspond to.  
+We'll extract the line number and description from each and add a third column that will help us identify the dataset to which the line number and description correspond to. 
+
+Note that we use `dplyr::select()` rather than `select()` alone. This is because another package we've loaded also has a function called `select()`. We make our choice of function more explicity by calling `dplyr::select()`.
 
 ```{r}
 B01002 <- B01002 %>%
@@ -412,9 +385,10 @@ We can use this codebook throughout our analysis to help find the variables we a
 
 Keep in mind that a codebook like this—and the table shells we used to produce it—sometimes does not cover the full range of variables or their exact corresponding names/line numbers. A codebook is a guide. During the downloading process tables can be reshaped to include additional information and this may alter the line numbers and variable names.  
 
-This is exactly the case with the datasets we downloaded. Upon downloading a dataframe with information for US counties, several additional columns were added to each dataset. These columns include important spatial reference codes which we'll use later to link data to areas on a map
+This is exactly the case with the datasets we downloaded. Upon downloading a dataframe with information for US counties, several additional columns were added to each dataset. These columns include a column with important spatial reference codes which we'll use later to link data to areas on a map
 
 As with all survey data, there is uncertainty in the estimates produced. The American Community Survey includes point estimates and margins of error for each point estimate in each of the tables they make publicly available. In addition to the point estimates, margins of error are included in the datasets we downloaded. 
+
 Despite these limitations, we have created a document with a standardized list of variable names. Although these variable names may possibly deviate in the datasets, they are extremely helpful at making known what is available in the dataset and what should be looked for. 
 
 We will consult our codebook throughout the wrangling process. 
@@ -434,7 +408,7 @@ codebook %>%
   filter(Type=="med_age")
 ```
 
-As we can see, our imported dataframe has more than the 3 variables listed in our codebook. Remember, the American Community survey includes margins of error along with the estimates they provide in tables. This partly explains why there are more columns that indicated by our codebook.
+As we can see, our imported dataframe has more than the 3 variables listed in our codebook. Remember, the American Community survey includes margins of error along with the estimates they provide in tables. This partly explains why there are more columns than indicated by our codebook.
 
 ```{r}
 dim(med_age)
@@ -442,7 +416,7 @@ dim(med_age)
 
 Let's look inside the dataframe. 
 
-Because of the number of columns it this dataframe has (`r dim(med_age)[2]`), it'd be better examined with `glimpse()`. 
+Because of the number of columns this dataframe has (`r dim(med_age)[2]`), it'd be better examined with `glimpse()`. 
 
 ```{r}
 glimpse(med_age)
@@ -468,12 +442,13 @@ colnames(med_age)
 
 It looks like the total estimate for median age is listed as `Estimate; Median age -- - Total:`. Again, sometimes codebooks deviate slightly from the tables produced during the downloading process. Now that we have identified the information we need, we can proceed with wrangling this dataframe for our use. 
 
-We delete the first row.
+What is now our first row has already been used to create columns names and is therefore no longer of use to use. We delete the first row
 
 ```{r}
 med_age <- med_age[-1,]
 med_age[1,]
 ```
+
 If we look at our dataframe now, each population estimate is coupled to a five digit code. Each US county has a unique identifier, called a FIPS code, that allows tabular data to be joined to spatial data. For now, that identification code is referred to as `Id2`.
 
 ```{r}
@@ -484,7 +459,7 @@ Eventually, we will be joining this dataframe to our spatial data. Rather than j
 
 *MICHAEL:LEAH* In the blurb above, I'm not sure if **accurate** is appropriate. Is there a word commonly used in data science that describes correctly attributing information to an observation/row. In much of the spatial work I've done, such joins are incredibly important. I think it'd be extremely beneficial here if we could highlight the importance of reference codes using data science language.
 
-For wrangling and regression analysis purposes, we need to rename our columns with information gathered in the process aboev. Our other dataframes, also from the American Community Survey, should also use unique FIPS codes to refer to counties. Let's keep this process in mind. 
+For wrangling and regression analysis purposes, we need to rename our columns with information gathered in the process above. Our other dataframes, also from the American Community Survey, should also use unique FIPS codes to refer to counties. Let's keep this process in mind. 
 
 Below, we rename the columns and get rid of information we don't need.
 
@@ -519,7 +494,7 @@ codebook %>%
 
 Given what we've learned from wrangling the previous ACS dataset, it's likely that this dataframe also contains a margin of error for each estimate.
 
-This dataset has `r dim(total_pop)[2]` columns and `r dim(total_pop)[1]` rows. Given the small number of columns, it's more expedient to use the `head()` function to first visualize the dataframe. 
+This dataset has `r dim(total_pop)[2]` columns and `r dim(total_pop)[1]` rows. Given the small number of columns, it's more expedient to use the `head()` function to first visualize the dataframe. We could also use `glimpse()`; aside from the very small practical advantage `glimpse()` gives us in this scenario, we use `glimpse()` for largely demonstrative purposes.
 
 ```{r}
 dim(total_pop)
@@ -544,21 +519,21 @@ total_pop <- total_pop %>%
   dplyr::select(FIPS, Population)
 ```
 
-Lastly, we'll confirm that our variable of interest is `numeric` and in the units we want, 10,000 person-units.
+Lastly, we'll confirm that our variable of interest is `numeric` and in the units we want, 100,000 person-units.
 
 ```{r}
-class(total_pop)
+class(total_pop$Population)
 
-total_pop$Population_10k <- as.numeric(total_pop$Population)/1e+05
+total_pop$Population_100k <- as.numeric(total_pop$Population)/1e+05
 ```
 
 The dataframe is now ready to be inserted into our analysis dataframe. 
 
 ```{r}
-head(med_age)
+head(total_pop)
 ```
 
-### ASC wrangling function
+### Wrangling function
 
 By now, its apparent that each of the remaining datasets will require similar steps to wrangle. We should begin to think about creating a function that will help streamline the wrangling process.
 
@@ -570,22 +545,18 @@ Below we create a function that wrangles the ACS datasets from the pattern we re
 
 In addition to the object with the data we are wrangling, the function requires and existing column name and the desired column name of the variable of interest from the dataset. 
 
-*NON-STANDARD EVALUATION ?tidyeval*
-
-*Possibly rename within select*
+*The function below make look slightly odd—we rename the same variable twice; this is because the `tidyverse` has verbs that use non-standard evaluation, meaning that some of the standard conventions in R programming are not adhered to perfectly. Non-standard evaluation can complicate the relationship between the input and output produced by custom functions. Non-standard evaluation prevents us from renaming our variable with our intended expression, instead renaming our variable to the name found in the function's environment. In short, we use `base` to rename an inprecisely renamed variable. We created the function below for ease of comprehension. Still, there are more advanced, nuanced approaches to deal with this problem that can be found on [this page](https://dplyr.tidyverse.org/articles/programming.html).*
 
 ```{r}
 ACS_wranglr <- function(dataframe, old_name, new_name){
-  old_name <- enquo(old_name)
-  new_name <- enquo(new_name)
   colnames(dataframe) <- dataframe[1,]
   dataframe <- dataframe[-1,]
   colnames(dataframe)[colnames(dataframe)=="Id2"] <- "FIPS"
   dataframe <- dataframe %>%
-    rename(!!new_name=!!old_name)
+    rename(new_name=paste0(old_name))
   dataframe <- dataframe %>%
-    dplyr::select(FIPS, !!new_name)
-  #dataframe$new_name <- as.numeric(data.frame$new_name)
+    dplyr::select(FIPS, new_name)
+  colnames(dataframe)[colnames(dataframe)=="new_name"] <- paste0(new_name)
   dataframe
 }
 ```
@@ -594,20 +565,20 @@ ACS_wranglr <- function(dataframe, old_name, new_name){
 
 Let's prepare the dataset with the race composition for each county. 
 
-We consult the codebook again to get an idea of how this dataset might be structured.
+We consult the codebook again to get an idea of how this dataset might be structured. For the purposes of this analysis, we are interested in obtaining information on the number of people estimated to identify as White, Black or African American, or Asian alone. Our codebook suggests these variables should be present in the dataframe we imported.
 
 ```{r}
 codebook %>%
   filter(Type=="race")
 ```
 
-If the pattern is continues, this dataframe should have more than 20 columns
-
-The dataset has `r dim(race)[2]` columns.
+If the pattern continues, this dataframe should have more than 20 columns
 
 ```{r}
 dim(race)
 ```
+
+The dataset has `r dim(race)[2]` columns.
 
 Using `glimpse()`, it becomes apparent that this dataset also uses impractical column names which could be made more practical with replacement by names included in the first row. 
 
@@ -617,226 +588,141 @@ glimpse(race)
 
 Let's use our function to wrangle this dataset. 
 
+Our function can only simplify the process one variable at a time. This prevents us from wrangling all the variables pertaining to race at the same time.
+
+We can revise our function to accomodate more variables. However, We are interested in only a handful of variables. There is therefore no need to revise our function, as the function we created can already do what we need with minimal work. 
+
+Still, we will need to produce a dataframe for each race we are considering using as a covariate. Since we are ultimately interested in producing a percentage to represent the racial composition of a county, we will also need a dataframe with information about the total population of each county. These dataframes can then be joined to one another, manipulated, and then joined to our analysis dataframe.
+
+With the column names we've gathered from the glimpse function...
+
 ```{r}
-colnames(race) <- race[1,]
-race <- race[-1,]
+glimpse(race)
 ```
 
-We need to create several predictors with information provided by this dataset. To do so, we'll use several `dplyr` verbs.
+...we can begin to produce the dataframes we need. 
 
-Before getting into detail, note that the code below generates an error. 
+```{r}
+race_total <- ACS_wranglr(race, "Estimate; Total:", "Total")
+race_W <- ACS_wranglr(race, "Estimate; Total: - White alone", "W_only")
+race_BA <- ACS_wranglr(race, "Estimate; Total: - Black or African American alone","BA_only")
+race_A<- ACS_wranglr(race, "Estimate; Total: - Asian alone", "A_only")
+```
 
-```{r, error=TRUE}
+We then join them to one another and manipulate them to produce the percentages for our analysis.
+
+```{r}
+race <- race_total %>%
+  left_join(race_W, by="FIPS") %>%
+  left_join(race_BA, by="FIPS") %>%
+  left_join(race_A, by="FIPS")
+
+sapply(race, class)
+
 race <- race %>%
-  rename("FIPS"=Id2,
-         "Total"=`Estimate; Total:`,
-         "W_only"=`Estimate; Total: - White alone`,
-         "BA_only"=`Estimate; Total: - Black or African American alone`,
-         "A_only"=`Estimate; Total: - Asian alone`) %>%
-  mutate(Perc_W_only=W_only/Total,
-         Perc_BA_only=BA_only/Total,
-         Perc_A_only=A_only/Total) %>%
+  mutate(Total=as.numeric(Total),
+         W_only=as.numeric(W_only),
+         BA_only=as.numeric(BA_only),
+         A_only=as.numeric(A_only)) %>%
+  mutate(Perc_W_only=W_only *100/Total,
+         Perc_BA_only=BA_only*100/Total,
+         Perc_A_only=A_only*100/Total) %>%
   dplyr::select(FIPS,
-         Perc_W_only,
-         Perc_BA_only,
-         Perc_A_only)
+                Perc_W_only,
+                Perc_BA_only,
+                Perc_A_only)
 ```
-
-If we check the class of each column, we find that each of the columns we treat numerically in the above code are of character class. 
-
-```{r}
-class(race$`Estimate; Total:`)
-class(race$`Estimate; Total: - White alone`)
-class(race$`Estimate; Total: - Black or African American alone`)
-class(race$`Estimate; Total: - Asian alone`)
-```
-
-Using the `mutate()` function, we can coerce these columns to `numeric` class. This lets us complete the calculations we originally intended. 
-
-Below we do just that. First, we rename the columns for practicality. Second, we coerce the columns to `numeric` class. Then, we calculate the predictors we'll be using for our regression analysis. Finally, we eliminate information that would not be relevant to our analysis with `select()`.
-
-```{r}
-race <- race %>%
-  rename("FIPS"=Id2,
-         "Total"=`Estimate; Total:`,
-         "W_only"=`Estimate; Total: - White alone`,
-         "BA_only"=`Estimate; Total: - Black or African American alone`,
-         "A_only"=`Estimate; Total: - Asian alone`) %>%
-  mutate("Total"=as.numeric(Total),
-         "W_only"=as.numeric(W_only),
-         "BA_only"=as.numeric(BA_only),
-         "A_only"=as.numeric(A_only)) %>%
-  mutate(Perc_W_only=W_only/Total,
-         Perc_BA_only=BA_only/Total,
-         Perc_A_only=A_only/Total) %>%
-  dplyr::select(FIPS,
-         Perc_W_only,
-         Perc_BA_only,
-         Perc_A_only)
-```
-
-While a function to wrangle our datasets could have been created to identify and deal with such issues, it could have only been done so with advanced knowledge of the problems that may emerge throughout the wrangling process. In the real world, such problems are often difficult or impossible to identify in advance. Such functions are therefore only useful in certain circumstances where the datasets involved are numerous and fairly similar in structure.
 
 ### Ethnicity
 
-This next dataset follows a similar process. Data from the American Community Survey is very well maintained and has technical documentation. The similarity in the wrangling process is a result of the similarity in the way the datasets are organized. 
-
-Using a similar wrangling process, we make the column names more practical and then calculate predictors that will be used in our regression analysis.
+We can prepare the dataset with the ethnic composition of each county in much the same way.
 
 ```{r}
-dim(ethnicity)
+ethnicity_total <- ACS_wranglr(ethnicity, "Estimate; Total:", "Total")
+ethnicity_Hispanic_Latino <- ACS_wranglr(ethnicity, "Estimate; Hispanic or Latino:", "Hispanic_Latino")
 
-glimpse(ethnicity)
+ethnicity <- ethnicity_total %>%
+  left_join(ethnicity_Hispanic_Latino, by="FIPS")
 
-colnames(ethnicity)
-colnames(ethnicity) <- ethnicity[1,]
-ethnicity <- ethnicity[-1,]
-
-class(ethnicity$`Estimate; Total:`)
-class(ethnicity$`Estimate; Hispanic or Latino:`)
+sapply(ethnicity, class)
 
 ethnicity <- ethnicity %>%
-  rename("FIPS"=Id2,
-         "Total"=`Estimate; Total:`,
-         "Hispanic_Latino"=`Estimate; Hispanic or Latino:`) %>%
-  mutate("Total"=as.numeric(Total),
-         "Hispanic_Latino"=as.numeric(Hispanic_Latino)) %>%
-  mutate(Perc_Hispanic_Latino=Hispanic_Latino/Total) %>%
-  dplyr::select(FIPS,
-         Perc_Hispanic_Latino)
+  mutate(Total=as.numeric(Total),
+         Hispanic_Latino=as.numeric(Hispanic_Latino)) %>%
+  mutate(Perc_Hispanic_Latino=Hispanic_Latino*100/Total) %>%
+  dplyr::select(FIPS, Perc_Hispanic_Latino)
 ```
 
 ### Median income
 
-The next couple of datasets, while from the American Community Survey, would be even more difficult to wrangle effectively with a function. 
+The next couple of datasets require a slightly different approach.
 
-The wrangling process for this dataset, which will eventually represent the median income of each county, is much more complex. 
+Let's consult our codebook.
 
-The dataset has `r dim(med_inc)[2]` columns. This is far too many columns to sift through efficiently or effectively. 
+```{r}
+codebook %>%
+  filter(Type=="med_inc")
+```
+
+As we can see from the output below, there are many columns in this dataset.
 
 ```{r}
 dim(med_inc)
 ```
 
-We need to learn a bit more about this dataset before we can continue. 
+We can take a look at the first few column names without the tibble output using the `t()` function in conjunction with the `dataframe()` function. Our column is likely one of the first given its breadth and its relative position shown by the codebook. 
 
-Like our prior ACS datasets, the first 50 columns appear to pertain to a codebook.
+**Were this not the case, we would have to choose between one of two options to identify the columns for this analaysis:**
+
+1. **Use regular expressions to sift through the column names**
+2. **Find a resource, if available, that could help produce a codebook more useful than the one we are currently using.**
 
 ```{r}
-colnames(med_inc)[1:50]
+t(data.frame(med_inc[1,1:10]))
 ```
 
-The first row appears to have more practical column names.
+Having identified the column we need, we can proceed to use the function we made to wrangle the dataset. 
 
 ```{r}
-head(med_inc)
+med_inc <- ACS_wranglr(med_inc,"Median income (dollars); Estimate; Households", "median_income")
 ```
 
-We substitute the impractical column names with more practical column names. 
+We then rescale the variable. Our variabl is now in $10,000-units.
 
 ```{r}
-colnames(med_inc) <- med_inc[1, ]
-med_inc <- med_inc[-1,]
-```
+sapply(med_inc, class)
 
-Now that we have practical column names, we can use regular expressions to search through the `dim(med_inc)[2]` columns. 
-
-`str_detect()` returns a logical vector, with a value of `TRUE` being returned for specified patterns found within a string. `R` can sum these `TRUE` values. This sum gives a count of how many values satisfied the logical statement. 
-
-We can use this to determine which patterns are most successful at narrowing down our search. 
-
-By condititioning on two statements, we are able to reduce the `r dim(med_inc)[2]` columns to `r sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & str_detect(colnames(med_inc),"[Ee]stimate"))`. 
-
-Below we used brackets around letters to denote that the pattern could include either a capital or lowercase letter. 
-
-From the first 50 columns we looked at, it becomes apparent that there are three key words that may be particularly useful: [Mmedian], [Ii]ncome, and [Ee]stimate. We can use either of these words or condition on both to search for relevant columns. 
-
-Let's count the number of column names that contain each patter. Eventually, we want to be able to extract those column names, meaning we want a number small enough to sift through but large enough to not be impractical.
-
-```{r}
-sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome"))
-sum(str_detect(colnames(med_inc), "[Ee]stimate"))
-sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") &
-      str_detect(colnames(med_inc),"[Ee]stimate"))
-```
-
-`r sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & str_detect(colnames(med_inc),"[Ee]stimate"))` columns is a promising amount of column names to sift through. We can determine what these`r sum(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & str_detect(colnames(med_inc),"[Ee]stimate"))` columns are using the `which()` function. 
-
-```{r}
-colnames(med_inc)[which(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & 
-                          str_detect(colnames(med_inc), "[Ee]stimate"))]
-```
-
-From here we can determine which columns we need and proceed as we did with the prior datasets.
-
-We will use the following column as a predictor. 
-
-```{r}
-colnames(med_inc)[which(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & 
-                          str_detect(colnames(med_inc), "[Ee]stimate"))][1]
-```
-
-We can save the name of this column to an object and then use that object in conjunction with the `paste()` function in dplyr verbs.
-
-```{r}
-median_income_column <- colnames(med_inc)[which(str_detect(colnames(med_inc), "[Mm]edian [Ii]ncome") & 
-                          str_detect(colnames(med_inc), "[Ee]stimate"))][1]
-
-med_inc <- med_inc %>%
-  rename("FIPS"=Id2,
-         "median_income"=paste(median_income_column)) %>%
-  dplyr::select(FIPS,
-         median_income)
-```
-
-After checking the resulting class of our predictor, we coerce it to numeric class.
-
-```{r}
-class(med_inc$median_income)
-med_inc$median_income <- as.numeric(med_inc$median_income)
+med_inc$median_income <- as.numeric(med_inc$median_income)/1e+04
 ```
 
 ### Percent insured
 
-The last dataset we wrangle by the American Community Survey follows a similar process.  
-
-After checking the dimensions of the dataset, we introduce more practical column names, use regular expressions to sift through numerous columns, and extract that column for use in our analysis. 
+The last dataset we wrangle by the American Community Survey follows a similar process. 
 
 ```{r}
-dim(perc_insured)
+codebook %>%
+  filter(Type=="perc_insured")
+```
 
-colnames(perc_insured)[1:50]
+Again our column is likely one of the first given its breadth and its relative position shown by the codebook.
 
-head(perc_insured)[,1:5]
+```{r}
+t(data.frame(perc_insured[1,1:10]))
+```
 
-colnames(perc_insured) <- perc_insured[1, ]
+Again, having identified the column we need, we can proceed to use the function we made to wrangle the dataset. 
 
-perc_insured <- perc_insured[-1,]
+```{r}
+perc_insured <- ACS_wranglr(perc_insured,"Percent Insured; Estimate; Civilian noninstitutionalized population", "perc_insured")
 
-sum(str_detect(colnames(perc_insured), "[Pp]ercent [Ii]nsured"))
-sum(str_detect(colnames(perc_insured), "[Ee]stimate"))
-sum(str_detect(colnames(perc_insured), "[Pp]ercent [Ii]nsured") &
-      str_detect(colnames(perc_insured),"[Ee]stimate"))
+sapply(perc_insured, class)
 
-colnames(perc_insured)[which(str_detect(colnames(perc_insured), "[Pp]ercent [Ii]nsured") & 
-                          str_detect(colnames(perc_insured), "[Ee]stimate"))]
-
-percent_insured_column <- colnames(perc_insured)[which(str_detect(colnames(perc_insured), "[Pp]ercent [Ii]nsured") & 
-                          str_detect(colnames(perc_insured), "[Ee]stimate"))][1]
-
-perc_insured <- perc_insured %>%
-  rename("FIPS"=Id2,
-         "perc_insured"=paste(percent_insured_column)) %>%
-  dplyr::select(FIPS,
-         perc_insured)
-
-class(perc_insured$perc_insured)
 perc_insured$perc_insured <- as.numeric(perc_insured$perc_insured)
 ```
 
-### Underlying cause of death data
+## Underlying cause of death data
 
-Let's wrangle the mortality data. 
+Let's wrangle the mortality data. We are no longer wrangling American Community Survey data and thus have no use for the `ACS_wranglr()` function we made.
 
 ```{r}
 dim(ucd_heart)
@@ -844,9 +730,7 @@ dim(ucd_heart)
 glimpse(ucd_heart)
 ```
 
-The crude rate included in the mortality data is calculated by dividing the number of deaths by a population that differs from that of the actual population of each county. For crude rates, the Centers for Disease Control exludes certain members of the population. We will be including all members of the population as an offset in our regression analysis using data from the American Community Survey, meaning we can get rid of the population estimates and crude rates provided in the dataset.
-
-**MICHAEL** Must provide explanation for why `NULL` is used here.
+The crude rate included in the mortality data is calculated by dividing the number of deaths by a population that differs from that of the actual population of each county. For crude rates, the Centers for Disease Control exludes certain members of the population. We will be including all members of the population as an offset in our regression analysis using data from the American Community Survey, meaning we can get rid of the population estimates and crude rates provided in the dataset as well as other information that we do not want joined to our analysis dataframe. 
 
 ```{r}
 ucd_heart$Notes <- NULL
@@ -863,10 +747,7 @@ ucd_heart$`2013 Urbanization` <- as.factor(ucd_heart$`2013 Urbanization`)
 glimpse(ucd_heart)
 ```
 
-*According to [this](https://www.cdc.gov/nchs/data/series/sr_02/sr02_166.pdf) document, the ordering should be something along these lines*
-
 We rename the five digit reference codes and order the urbanization categories. 
-
 ```{r}
 ucd_heart <- ucd_heart %>%
   rename("FIPS"=`County Code`)
@@ -911,23 +792,29 @@ ucd_heart <- ucd_heart %>%
   filter(!(is.na(Deaths) & is.na(FIPS)))
 ```
 
-### United States county boundaries
-
 Recall that we transformed the spatial data as soon as the data was imported. This is considered good practice. Depending on the projection of the spatial data, not doing so could have unintended consequences on the analysis.
 
 We transformed the spatial data to the *US National Atlas Equal Area* projection. This projection does a good job of representing the size of states. Some projections, such as the popular Mercator projection, make areas near the north and south poles appear disproportionately larger than areas further away. In the Mercator projection, Greenland is about the same size as Africa, when the latter is in fact larger the former. 
 
-We use the `st_crs` function to determine the projection (coordinate reference system) used by the United States county boundaries imported. We set the projection immediately after importing the boundaries to the **US National Atlas Equal Area** projection, identifiable by an EPSG of 2163.
+We use the `st_crs` function to determine the projection (coordinate reference system) used by the United States county boundaries imported. We set the projection immediately after importing the boundaries to the *US National Atlas Equal Area* projection, identifiable by an EPSG of 2163.
+
+EPSG codes are essentially identification codes for projections. Again, the *US National Atlas Equal Area* projection is identifiable by an EPSG of 2163. Were we interested in conducting an analysis using a different projection, we would refer to a different EPSG code to transform our spatial data. EPSG codes for different regions of the world can be found on [this registry](http://www.epsg-registry.org/). 
+
+If we check the projectinon of our spatial data, we find that the resulting EPSG code matches the EPSG code we used to transform the spatial data. 
 
 ```{r}
 st_crs(map_sf)
 ```
+
+Our spatial data represents a large portion of the United States. We need this spatial data to produce spatially defined covariates and create diagnostic plots later in our analysis. For this reason, we will be appending this object with information from the datasets we prepared earlier.
 
 ```{r}
 dim(map_sf)
 
 glimpse(map_sf)
 ```
+
+We first join the mortality data to this object,first renaming the column with reference codes for each county to match the column name of our prepared datasets.
 
 ```{r}
 map_sf <- map_sf %>%
@@ -938,6 +825,14 @@ class(map_sf$Deaths)
 class(map_sf$`2013 Urbanization`)
 ```
 
+## State and county names
+
+Reference codes alone are not very useful for analytical purposes. We need to join our reference data to distinguish between observations by name.
+
+Information from our reference dataset, however, is not yet ready to be joined to analysis dataframe.
+
+We remove much of the whitespace in between cells.
+
 ```{r}
 glimpse(FIPS_codes)
 
@@ -947,11 +842,17 @@ colnames(FIPS_codes)
 FIPS_codes[4,1:6]
 colnames(FIPS_codes) <- FIPS_codes[4,]
 FIPS_codes <- FIPS_codes[-(1:4),]
+```
 
+Our data appears to contain codes that refer to regions at varying levels of the US. Additionally, the dataset does not contiain five-digit reference codes that we can use. The reference codes we have been using contain a two-digit state code followed by a three-digit county code.
+
+```{r}
 glimpse(FIPS_codes)
+```
 
-sapply(FIPS_codes[,1:(length(colnames(FIPS_codes)))], class) # Apply this to other section of the code where checking of column class is necessary. 
+We need to combine the state and county codes in our reference dataset. Our reference dataset, however, has separate rows for national, sub-regional,  state, county, and even town-level information. Fortunately, our reference dataset contains summary levels that allow us to differentiate between these levels. 
 
+```{r}
 FIPS_codes <- sapply(FIPS_codes[,1:length(colnames(FIPS_codes))], as.factor)
 
 class(FIPS_codes)
@@ -959,9 +860,27 @@ class(FIPS_codes)
 FIPS_codes <- as.data.frame(FIPS_codes)
 
 sapply(FIPS_codes[,1:(length(colnames(FIPS_codes))-1)], summary)
+```
 
+We can try to combine our state and county codes as is. However, given that other other regional information is contained in this dataset, doing so would create a subset of 5-digit codes that don't refer to an actual county. The FIPS codes we are using are a combination of a non-zero state and county codes. Our current dataset uses repeated zeros to denote that no such code exists at that area-level. 
+
+We can eliminate rows that have non-zero state and county codes. Although not a bad idea, this would involve extensive use of regular expressions.
+
+Instead, we can take advantage of the fact that there is a column that allows us to distinguish between the different area-levels. We can create a list of multiple dataframes, one per area-level, using the `group_split()` function by the `dplyr` package in the `tidyverse`. By separating our reference dataset in this way, we can use a subset of the data that refers to actual counties to create the five-digit reference codes we need. 
+
+Let's take a final look at our reference dataset.
+
+```{r}
 colnames(FIPS_codes)
 
+class(FIPS_codes)
+```
+
+We need the summary level for our plan with the `group_split()` function to work properly. We also need our state and county codes; these will be combined to create the five-digit FIPS code we need. Most importantly, we need the name of the county.
+
+We select the columns we need and rename them for ease of use. To combine state and county codes, we coerce the columns of our reference dataset to character class with the `sapply()` function. The `sapply()` function produces a matrix, however, `dplyr` verbs cannot be applied to a matrix. We coerce the reference dataset back to a `dataframe` class and then combine the state and county codes. We then split our reference dataset by area-level with the `group_split()` function.
+
+```{r}
 FIPS_codes <- FIPS_codes %>%
   dplyr::select(`Summary Level`,
          `State Code (FIPS)`,
@@ -972,15 +891,25 @@ FIPS_codes <- FIPS_codes %>%
          "county_code"=`County Code (FIPS)`,
          "area_name"=`Area Name (including legal/statistical area description)`) %>%
   sapply(as.character) %>%
-  as.data.frame() %>% #Discuss how using sapply converted our dataframe into a matrix, what we are doing essentially is turning it back into a dataframe for manipulation
+  data.frame() %>%
   mutate("FIPS"=paste0(state_code,county_code))
 
 FIPS_codes_dfs <- FIPS_codes %>%
   group_split(summary_level)
+```
+
+The `group_split()` function returns a list. If we take a quick glance at this list, it becomes apparent that one of the groups contains a state name and another group contains a county name—knowing each for a given reference code in our analysis dataframe would be extremely useful.
+
+```{r}
+class(FIPS_codes_dfs)
 
 FIPS_codes_dfs %>%
   lapply(`[`, 1, )
+```
 
+We save each of these groups to an object.
+
+```{r}
 state_codes <- FIPS_codes_dfs[[2]]
 glimpse(state_codes)
 state_codes <- state_codes %>%
@@ -992,9 +921,12 @@ glimpse(county_codes)
 county_codes <- county_codes %>%
   dplyr::select(-summary_level) %>%
   rename("county_name"=area_name)
+glimpse(county_codes)
+```
 
-# Mention how there is a heirarchy to these codes 
+Each of the above two objects contains a column with a state code. We use the state codes to join the state name information to the object with our county name information. We then use the FIPS codes we produced to join the ACS datasets we prepared earlier to the object with our county name information. The resulting object contains the ACS survey data we wrangled along with state and county names by unique five-digit FIPS code. 
 
+```{r}
 covariates <- county_codes %>%
   left_join(state_codes, by="state_code") %>%
   left_join(total_pop, by="FIPS") %>%
@@ -1003,21 +935,25 @@ covariates <- county_codes %>%
   left_join(ethnicity, by="FIPS") %>%
   left_join(med_inc, by="FIPS") %>%
   left_join(perc_insured, by="FIPS")
+
+colnames(covariates)
 ```
 
-*Now that we have the reference codes, we can update this section*
+We can also use information from the US Census Bureau to identify which codes correspond to the states of interest [click. here](https://www.census.gov/geographies/reference-files/2017/demo/popest/2017-fips.html)).
 
-We can use information from the US Census Bureau to identify which codes correspond to the states of interest (click. [here](https://www.census.gov/geographies/reference-files/2017/demo/popest/2017-fips.html)).
+For demonstrative purposes, we will exclude Alaska, Hawaii, and Puerto Rico.
 
 ```{r}
 map_sf <- map_sf %>%
   left_join(covariates, by="FIPS")
 
-contiguous_us <- map_sf %>% filter(!(STATEFP %in% c("02", #Alaska
-                                                    "15", #Hawaii
-                                                    "72" #Puerto Rico
+contiguous_us <- map_sf %>% filter(!(state_name %in% c("Alaska",
+                                                    "Hawaii",
+                                                    "Puerto Rico"
                                                     )))
 ```
+
+## Reference code errors
 
 When using reference codes to join datasets, it's important to check for missing values. If the datasets use the same reference code system—but were updated at different times or use a slightly different convention—some observations will be unable to join correctly. This could cause issues that are difficult to diagnose later on. As always, it's important to check your work, especially early on during the wrangling process.
 
@@ -1042,13 +978,17 @@ contiguous_us %>%
   pull(NAME)
 ```
 
+```{r, echo = FALSE, out.width = "100%", out.height="500%"}
+knitr::include_graphics("county_geography-_changes2015.pdf")
+```
+
 Furthermore, this observation has an observed population but missing death count and crude mortality rate. 
 
 ```{r}
 contiguous_us %>%
   filter(is.na(County)|
            is.na(`2013 Urbanization`)) %>% 
-  pull(Population_10k)
+  pull(Population_100k)
 
 contiguous_us %>%
   filter(is.na(County)|
@@ -1058,7 +998,7 @@ contiguous_us %>%
 
 Assuming that an overwhelming majority of missing mortality data is a result of data suppression, we can determine that there was a single error that occurred when joining datasets by reference codes given the above information. Additionally, because population data is properly joined and mortality data is missing we can deduce that this single error emerged when the mortality data was joined.
 
-Indeed, if we look at the mortality data we find that what is now Oglala Lakota County (46201) is referred to as Shannon County (46113).  
+If we look at the mortality data we find that what is now Oglala Lakota County (46201) is referred to as Shannon County (46113). This is confirmed in the document embedded above.
 
 ```{r}
 ucd_heart %>%
@@ -1083,38 +1023,54 @@ contiguous_us <- contiguous_us %>%
   select(names(contiguous_us))
 ```
 
-Now that we have the death count and population of each county correctly joined, we can calculated the crude rate per 100,000 people.
+Now that we have the death count and population of each county correctly joined, we can calculate the crude rate per 100,000 people.
 
 ```{r}
 contiguous_us <- contiguous_us %>%
-  mutate("Crude Rate"=round((Deaths/Population_10k),3))  %>%
-  mutate("Crude Rate"=round((Deaths/Population_10k),3))
+  mutate("Crude Rate"=round((Deaths/Population_100k),3))  %>%
+  mutate("Crude Rate"=round((Deaths/Population_100k),3))
 ```
 
-### Lag Covariates
+## Spatial lags and smoothing
 
-We need to construct the neighborhood matrix in a way that does includes all the relationships between counties of interest, otherwise we will lose valuable information and could bias our results.
+We can create covariates and visualizations using data from the relative positions given by the spatial data. Doing so will require that we create a neighborhood matrix that defines those relative positions. 
 
-Let's create a neighborhood matrix that includes counties just outside of our region of interest. 
-
-Five states border our region of interest. Let's include them in our neighborhood matrix.
+We save our spatial data to an object with a different name. 
 
 ```{r}
 us_cvd_sp_data <- contiguous_us
 ```
 
-```{r, eval=FALSE}
-ucd_cvd_sp_data <- us_cvd_sp_data %>%
-  filter(!is.na(Deaths))
-```
+To visualize the neighborhood matrix, we need to create: a spatial polygons dataframe from our spatial data, a neighborhood list from the spatial polygons dataframe, an sf object of the spatial weights from the neighborhood list, and lastly an sf object of the spatial weights in the same projection as our spatial data. 
+
+1. a spatial polygons dataframe from our spatial data
+2. **a neighborhood list from the spatial polygons dataframe**
+3. an sf object of the spatial weights from the neighborhood list
+4. an sf object of the spatial weights in the same projection as our spatial data
+
+Of these, the neighborhood list produced from your spatial data is the most important. The neighborhood list defines the relative positions. With the relative positions defined, we can provide weights that will allow us to create smoothed/lagged covariates.
+
+Again, we create the following to visualize the neighborhood matrix:
+
+1. a spatial polygons dataframe from our spatial data
+    + with the `as()` function from the `sf` package
+2. **a neighborhood list from the spatial polygons dataframe**
+    + with the `poly2nb()` function from the `spdep` package
+3. an sf object of the spatial weights from the neighborhood list
+    + with the `nb2lines()` function from the `spdep` package in conjunction with the `as()` function from the `sf` package
+4. an sf object of the spatial weights in the same projection as our spatial data
+    + with the `st_set_crs()` function in conjunction with the `st_crs` function, both from the `sf` package.
+
+**Note that in the code below, we specify `queen = TRUE`. For our analysis, we will define neighbors as those that are queen's case adjacent, that is neighbors that are above or below, left or right, or on a diagonal. Had we instead written `queen = FALSE`, we would be defining neighbors as rook's case adjacent; this is the same as queen's case adjacent but without the diagonal adjacency.** 
 
 ```{r}
-# Would be neat to give an example of queen's vs rook's case matrices
 us_cvd_sp_data_sp <- as(us_cvd_sp_data, 'Spatial')
 nbrs_us_cvd_sp_data_sp <- poly2nb(us_cvd_sp_data_sp, queen = TRUE)
 neighbors_sf <- as(nb2lines(nbrs_us_cvd_sp_data_sp, coords = coordinates(us_cvd_sp_data_sp)), 'sf')
 neighbors_sf <- st_set_crs(neighbors_sf, st_crs(us_cvd_sp_data))
 ```
+
+After creating the above we can visualize the neighborhood matrix.
 
 ```{r}
 ggplot(us_cvd_sp_data) +
@@ -1123,61 +1079,72 @@ ggplot(us_cvd_sp_data) +
   theme_minimal()
 ```
 
-#### Smoothing
+With this matrix, we can create smoothed maps. Smoothing is the process of borrowing information from surrounding area-level units to create values with less variation. The reduced variation allows for more easily interpretable maps and can be useful for modeling purposes. 
 
-With this matrix, we can create smoothed maps. Smoothing is the process of borrowing information from surrounding area-level units to create values with less variation.
+### 1^st^ order lag
 
-Our regression will require that we create lagged variables, variables with values that are summaries of proximal regions. What we consider proximal is a matter of our analysis question.
+Our regression analysis will require that we create lagged variables, variables with values that are summaries of proximal regions. What we consider proximal is a matter of our analysis question.
 
-Recall our adjacency matrix. We can borrow information from area-level units—in our case, counties—that are queen adjacent. Doing this would be considered smoothing.
+Recall our neighborhood matrix. We can borrow information from area-level units—in our case, counties—that are queen adjacent. Doing this would be considered smoothing.
 
-If we smoothed nearest queen adjacent area-level units, we would be creating a first order lagged variable. 
+If we used the nearest queen adjacent area-level units to produce a summary statistics, we would be creating a first order lagged variable. 
 
 Below we create a first order lagged variable.
 
+We create a weighted neighborhood list from the neighborhood list we created earlier. A weights matrix is then created from this weighted neighborhood list.
+
 ```{r}
-# First order lag
+weighted_list <- nb2listw(nbrs_us_cvd_sp_data_sp,style="W", zero.policy = TRUE)
+weighted_matrix <- listw2mat(weighted_list)
+```
 
-FFct_nb_w <- nb2listw(nbrs_us_cvd_sp_data_sp,style="W", zero.policy = TRUE)
-Wfull<-listw2mat(FFct_nb_w)
+We can produce a variable that represents the arithmetic mean of a county's nearest queen adjacent neighbors with some matrix multiplication of this weights matrix by the variable of interest.
 
-us_cvd_sp_data$smoothed_pop <- Wfull %*% us_cvd_sp_data$Population_10k
+Below we create first order lagged variable of the population of each county and produce of map with the resulting values. Remember, the values represent the arithmetic mean of the nearest neighbors of a county. By borrowing information from nearby regions, we are essentially smoothing values. Producing lagged covariates and smoothing values on a map are essentially the same process.
+
+```{r}
+us_cvd_sp_data$smoothed_pop <- weighted_matrix %*% us_cvd_sp_data$Population_100k
 
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=smoothed_pop)) +
   scale_fill_gradientn(colours = viridis(10))
 ```
 
-If we smoothed using the next nearest adjacent area-level units, we would be creating a second order lagged variable. 
+### 2^nd^ order lag
+
+If we smoothed using the second nearest adjacent area-level units, we would be creating a second order lagged variable. 
 
 The process for creating a second order lagged variable, and so on, is the same.
 
 ```{r}
-# Second order lag 
-
 nb_sec_lag_list <- nblag(nbrs_us_cvd_sp_data_sp, maxlag = 2)
 nb_sec_lag <- nb_sec_lag_list[[2]]
 
-FFct_nb_w <- nb2listw(nb_sec_lag,style="W", zero.policy = TRUE)
-Wfull<-listw2mat(FFct_nb_w)
+weighted_list <- nb2listw(nb_sec_lag,style="W", zero.policy = TRUE)
+weighted_matrix <- listw2mat(weighted_list)
 
-us_cvd_sp_data$smoothed_pop_sec_order <- Wfull %*% us_cvd_sp_data$Population_10k
+us_cvd_sp_data$smoothed_pop_sec_order <- weighted_matrix %*% us_cvd_sp_data$Population_100k
 
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=smoothed_pop_sec_order)) +
   scale_fill_gradientn(colours = viridis(10))
 ```
 
+### Oversmoothing
+
 We can also combine combine information from the nearest and next nearest adjacent area-level units. 
 
-The code below uses the list of first and second order adjacent counties to do exactly that. 
+The code below uses the list of first and second order adjacent counties to do exactly that.
+
+Note that now we are using the `nblag_cumul()` function by the `spdep` package. This function combines the elements in a neighborhood list to create a neighborhood list that contains but does not differentiate the neighbors by lag order of neighbors. In other words, it creates a neighborhood list with all neighbors up until a certain order. With this neighborhood list, one can smooth values using an arithmetic mean composed of nearest neighbors, n^th^ order neighbors, and neighbors in between. 
+
 ```{r}
 nb_cum_lag <- nblag_cumul(nb_sec_lag_list)
 
-FFct_nb_w <- nb2listw(nb_cum_lag,style="W", zero.policy = TRUE)
-Wfull<-listw2mat(FFct_nb_w)
+weighted_list <- nb2listw(nb_cum_lag,style="W", zero.policy = TRUE)
+weighted_matrix <- listw2mat(weighted_list)
 
-us_cvd_sp_data$smoothed_pop_cum_order <- Wfull %*% us_cvd_sp_data$Population_10k
+us_cvd_sp_data$smoothed_pop_cum_order <- weighted_matrix %*% us_cvd_sp_data$Population_100k
 
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=smoothed_pop_cum_order)) +
@@ -1194,10 +1161,10 @@ The end product is a map with much less variation.
 nb_ext_lag_list <- nblag(nbrs_us_cvd_sp_data_sp, maxlag = 10)
 nb_ext_cum_lag <- nblag_cumul(nb_ext_lag_list)
 
-FFct_nb_w <- nb2listw(nb_ext_cum_lag,style="W", zero.policy = TRUE)
-Wfull<-listw2mat(FFct_nb_w)
+weighted_list <- nb2listw(nb_ext_cum_lag,style="W", zero.policy = TRUE)
+weighted_matrix <- listw2mat(weighted_list)
 
-us_cvd_sp_data$smoothed_pop_ext_cum_order <- Wfull %*% us_cvd_sp_data$Population_10k
+us_cvd_sp_data$smoothed_pop_ext_cum_order <- weighted_matrix %*% us_cvd_sp_data$Population_100k
 
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=smoothed_pop_ext_cum_order)) +
@@ -1208,7 +1175,7 @@ If we plot the difference of the smoothed population from the actual population,
 
 ```{r}
 us_cvd_sp_data <- us_cvd_sp_data %>%
-  mutate(Bias = Population_10k - smoothed_pop_ext_cum_order) %>%
+  mutate(Bias = Population_100k - smoothed_pop_ext_cum_order) %>%
   mutate(Bias_cat = cut(Bias, breaks = 7, include.lowest = TRUE, ordered_result = TRUE)) %>%
   mutate("Bias Class" = ifelse(sign(Bias)==-1, "Overestimation", ifelse(sign(Bias)==1, "Underestimation", "Neither"))) 
 
@@ -1228,8 +1195,9 @@ We can think of this in a different way. What if we were instead analyzing data 
 We now need to develop an object so that, with matrix multiplication, we can compute the arithmetic mean of nearby counties. 
 
 We won't be able to compute the arithmetic mean with missing values via matrix multiplication. We check below for missing values 
+
 ```{r}
-sum(is.na(contiguous_us$Population_10k))
+sum(is.na(contiguous_us$Population_100k))
 ```
 
 ```{r}
@@ -1239,10 +1207,10 @@ nbrs_contiguous_us_sp <- poly2nb(contiguous_us_sp, queen = TRUE)
 nb_ext_lag_list_contiguous <- nblag(nbrs_contiguous_us_sp, maxlag = 10)
 nb_ext_cum_lag_contiguous <- nblag_cumul(nb_ext_lag_list_contiguous)
 
-A <- nb2listw(nb_ext_cum_lag_contiguous,style="W", zero.policy = TRUE)
-Wfulle <-listw2mat(A)
+weighted_list_cum <- nb2listw(nb_ext_cum_lag_contiguous,style="W", zero.policy = TRUE)
+weighted_matrix_cum <-listw2mat(weighted_list_cum)
 
-contiguous_us$smoothed_pop_ext_cum_order <- Wfulle %*% contiguous_us$Population_10k
+contiguous_us$smoothed_pop_ext_cum_order <- weighted_matrix_cum %*% contiguous_us$Population_100k
 
 ggplot(contiguous_us) +
   geom_sf(aes(fill=smoothed_pop_ext_cum_order), color="transparent") + 
@@ -1254,18 +1222,18 @@ Broadly speaking, smoothing makes values look more like the global average, ther
 Using the code we used earlier, we can create a function that produces a lagged covariate. This is more efficient that manually creating each variable with the same code and prevents errors. Conversely, errors in our function can be systematically applied to each of our covariates. Since we already have the code and are assured that it functions as we intend, this is not a problem.
 
 ```{r}
-FFct_nb_w <- nb2listw(nbrs_us_cvd_sp_data_sp,style="W", zero.policy = TRUE)
-Wfull<-listw2mat(FFct_nb_w)
+weighted_list <- nb2listw(nbrs_us_cvd_sp_data_sp,style="W", zero.policy = TRUE)
+weighted_matrix <- listw2mat(weighted_list)
 
 lag_creator <- function(vector){
-  lag_vector <- Wfull %*% vector
+  lag_vector <- weighted_matrix %*% vector
   lag_vector
 }
 
 lag_creator_plus <- function(vector, lags=2){
   lag_order_list <- nblag(nbrs_us_cvd_sp_data_sp, maxlag = lags)
   nb_cum_lag <- nblag_cumul(lag_order_list)
-  lag_vector <- Wfull %*% vector
+  lag_vector <- weighted_matrix %*% vector
   lag_vector
 }
 
@@ -1281,33 +1249,11 @@ us_cvd_sp_data <- us_cvd_sp_data %>%
          "Perc_Hispanic_Latino_lag"=lag_creator(Perc_Hispanic_Latino),
          "median_income_lag"=lag_creator(median_income),
          "perc_insured_lag"=lag_creator(perc_insured),
-         "Population_10k_lag"=lag_creator(Population_10k)
+         "Population_100k_lag"=lag_creator(Population_100k)
          )
-
-us_cvd_sp_data <- us_cvd_sp_data %>%
-  mutate("median_age_lag2"=lag_creator_plus(median_age),
-         "Perc_W_only_lag2"=lag_creator_plus(Perc_W_only),
-         "Perc_BA_only_lag2"=lag_creator_plus(Perc_BA_only),
-         "Perc_A_only_lag2"=lag_creator_plus(Perc_A_only),
-         "Perc_Hispanic_Latino_lag2"=lag_creator_plus(Perc_Hispanic_Latino),
-         "median_income_lag2"=lag_creator_plus(median_income),
-         "perc_insured_lag2"=lag_creator_plus(perc_insured),
-         "Population_10k_lag2"=lag_creator_plus(Population_10k)
-         )
-
 ```
 
-# Exploratory data analysis 
-
-Before we analyze any of our data, let's set a randomization seed. This will make markov chain estimates reproducible. 
-
-```{r}
-set.seed(9999)
-```
-
-We can explore our data in different ways now that we've merged our data to one of the maps we've imported. 
-
-The great thing about using sf objects is that they work very well with the `tidyverse` and `ggplot` packages. The code required to visualize and summarize our spatial data is extremely similar, if not identical to that used in non-spatial applications. 
+## Distance to urban center
 
 Let's create a map of the crude mortality rate of cardiovascular diseases across the contiguous United States to help identify trends beyond our region of interest. 
 
@@ -1321,8 +1267,6 @@ ggplot(contiguous_us) +
   theme_void()
 ```
 
-**MICHAEL** This needs to be included in the data wrangling portion. 
-
 We need to create one last covariate representing the distance from the nearest large central metropolitan county in 10 km units. 
 
 As done so previously, we check the projection of the spatial data we are working with. 
@@ -1334,11 +1278,11 @@ st_crs(us_cvd_sp_data)
 We then create an dataframe of the large central metropolitan counties. 
 
 ```{r}
-LC_metro1 <- us_cvd_sp_data %>% filter(`2013 Urbanization`=="Large Central Metro") %>% mutate(index=row_number())
+LC_metro <- us_cvd_sp_data %>% filter(`2013 Urbanization`=="Large Central Metro") %>% mutate(index=row_number())
 
 st_agr(us_cvd_sp_data) <- "constant"
 
-st_agr(LC_metro1) <- "constant"
+st_agr(LC_metro) <- "constant"
 ```
 
 We want to compute the shortest length between each county, the curve of which on a sphere is referred to as a geodesic. The length of the geodesic is also known as great circle distance. To calculate great circle distance, we need to transform our dataframe from a projected coordinate system based on a two-dimensional plane back to a geographic coordinate system based on the angles produced relative to earth's center. Additionally, we need to obtain the centroids of each county to calculate this distance. We can calculate the distance between boundary lines, but this would make it difficult to differentiate the distance between a county and itself from and the distance between a county and its neighbor. For this analysis, we will use county centroids to make this distinction. In a separate analysis, it may be more appropriate to calculate the distance between boundary lines. Note that the distance between boundaries will always be shorter than the distance between centroids.
@@ -1350,18 +1294,16 @@ us_cvd_sp_data_geodetic <- st_transform(st_centroid(us_cvd_sp_data), 4326)
 
 dim(us_cvd_sp_data_geodetic)
 
-LC_metro1_geodetic <- st_transform(st_centroid(LC_metro1), 4326)
+LC_metro_geodetic <- st_transform(st_centroid(LC_metro), 4326)
 
-dim(LC_metro1_geodetic)
+dim(LC_metro_geodetic)
 ```
 
 With then then calculate the distance between the centroids of all counties and large metropolitan counties using the `st_distance()` function by `sf`. Note that we specify that the distance calculated be great circle distance. 
 
 ```{r}
-cen_dist_matrix <- st_distance(x=us_cvd_sp_data_geodetic, y=LC_metro1_geodetic, which = "Great Circle")
+cen_dist_matrix <- st_distance(x=us_cvd_sp_data_geodetic, y=LC_metro_geodetic, which = "Great Circle")
 ```
-
-**MICHAEL** This needs to be finished. 
 
 The resulting object has `r dim(cen_dist_matrix)[1]` rows and `r dim(cen_dist_matrix)[2]` columns representing all counties and large metropolitan counties, respectively.
 
@@ -1374,14 +1316,34 @@ We want to obtain the distance between a given county and its nearest large metr
 To do this, we apply the `min()` function across rows using the `apply()` function. Note that we use the `data.frame()` function to convert the matrix to a `dataframe`. This is because the `apply()` function does not work on matrices. 
 
 ```{r}
-us_cvd_sp_data <- us_cvd_sp_data %>% mutate(cen_dist_m=apply(data.frame(cen_dist_matrix), 1,min),
+us_cvd_sp_data <- us_cvd_sp_data %>%
+  mutate(cen_dist_m=apply(data.frame(cen_dist_matrix), 1,min),
                          index=apply(cen_dist_matrix, 1, function(matrix_row) which(matrix_row==min(matrix_row)))) %>%
   mutate(cen_dist_10km=cen_dist_m/(1000*10))
 
-LC_metro1 <- LC_metro1 %>% as.data.frame() %>% dplyr::select(index, county_name) %>% rename("nearest_LC_metro"=county_name)
+LC_metro <- LC_metro %>%
+  as.data.frame() %>%
+  dplyr::select(index, county_name) %>%
+  rename("nearest_LC_metro"=county_name)
 
-us_cvd_sp_data <- us_cvd_sp_data %>% left_join(LC_metro1, by="index")
+us_cvd_sp_data <- us_cvd_sp_data %>%
+  left_join(LC_metro, by="index")
 ```
+
+## Population Density
+
+Here we create a variable representing population density.
+
+```{r}
+class(us_cvd_sp_data$Population)
+us_cvd_sp_data$Population <- as.numeric(us_cvd_sp_data$Population)
+class(us_cvd_sp_data$ALAND)
+
+us_cvd_sp_data <- us_cvd_sp_data %>%
+  mutate(Pop_dens=Population/ALAND) 
+```
+
+## Nearest neighbor imputation
 
 Our mortality data is left-censored. Death counts less than 10 are suppressed from public view to preserve the confidentiality of that information. As we are analyzing data, these suppressed values present themselves as missing values.
 
@@ -1481,12 +1443,12 @@ missing_nearest_neighbors <- t(missing_nearest_neighbors)
 class(missing_nearest_neighbors)
 ```
 
-We calculate the mean of the non-missing values. We then impute the missing values by multiplying the mean of the `Crude Rate` by the `Population` and rounding to the nearest whole number. We divide by `1e+05` Before rounding to the nearest whole number to ensure that the units of our `Crude Rate` don't accidentally multiply our impute death counts by a factor of `1e+05`.
+We calculate the mean of the non-missing values. We then impute the missing values by multiplying the mean of the `Crude Rate` by the `Population_100k`.
 
 ```{r}
 mortality_missing <- mortality_missing %>%
   mutate("Crude Rate" = apply(missing_nearest_neighbors ,1, mean),
-         Deaths = ifelse(is.na(Deaths), round(`Crude Rate` * Population_10k, 0), Deaths)) 
+         Deaths = ifelse(is.na(Deaths), round(`Crude Rate` * Population_100k, 0), Deaths)) 
 ```
 
 The non-missing dataframe is then combined with the dataframe with now imputed values to update our analysis dataframe. 
@@ -1500,8 +1462,7 @@ Now that we have a dataframe with imputed mortality data, we can generate a cova
 
 ```{r}
 us_cvd_sp_data <- us_cvd_sp_data %>%
-  mutate(CrudeRate_lag=lag_creator(`Crude Rate`),
-         CrudeRate_lag2=lag_creator_plus(`Crude Rate`))
+  mutate(CrudeRate_lag=lag_creator(`Crude Rate`))
 ```
 
 We then check for missing values across columns. 
@@ -1512,7 +1473,19 @@ sum(apply(us_cvd_sp_data, 2, function(x)sum(is.na(x))))
 
 Our analysis dataframe has no missing values. 
 
+# Exploratory data analysis
+
 Let's explore the data.
+
+Plotting distance between large central metropolitan counties gives us a rough idea of what areas are rural and what areas are urban. 
+
+```{r}
+ggplot(us_cvd_sp_data) +
+  geom_sf(aes(fill=cen_dist_10km), color="black", lwd=0.1) +
+  scale_fill_gradientn(colours = viridis(5)) +
+  labs(title = "Deaths", subtitle = "Contiguous United States") +
+  theme_void()
+```
 
 The number of CVD deaths appears skewed. 
 
@@ -1520,7 +1493,7 @@ The number of CVD deaths appears skewed.
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=Deaths), color="black", lwd=0.1) +
   scale_fill_gradientn(colours = viridis(5)) +
-  labs(title = "Deaths", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  labs(title = "Deaths", subtitle = "Contiguous United States") +
   theme_void()
 ```
 
@@ -1530,7 +1503,7 @@ We can visualize this distribution of CVD deaths by plotting the natural log of 
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=log(Deaths+1)), color="black", lwd=0.1) +
   scale_fill_gradientn(colours = viridis(5)) +
-  labs(title = "log(Deaths+1)", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  labs(title = "log(Deaths+1)", subtitle = "Contiguous United States") +
   theme_void()
 ```
 
@@ -1538,9 +1511,9 @@ The same issue emerges when plotting the population of each county.
 
 ```{r}
 ggplot(us_cvd_sp_data) +
-  geom_sf(aes(fill=Population_10k), color="black", lwd=0.1) +
+  geom_sf(aes(fill=Population_100k), color="black", lwd=0.1) +
   scale_fill_gradientn(colours = viridis(5)) +
-  labs(title = "Population (10,000 person-units)", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  labs(title = "Population (10,000 person-units)", subtitle = "Contiguous United States") +
   theme_void()
 ```
 
@@ -1548,13 +1521,11 @@ To resolve that issue we again plot the natural log of the value + 1. In this ca
 
 ```{r}
 ggplot(us_cvd_sp_data) +
-  geom_sf(aes(fill=log(Population_10k + 1)), color="black", lwd=0.1) +
+  geom_sf(aes(fill=log(Population_100k + 1)), color="black", lwd=0.1) +
   scale_fill_gradientn(colours = viridis(5)) +
-  labs(title = "log(Population (10,000 person-units) + 1)", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  labs(title = "log(Population (10,000 person-units) + 1)", subtitle = "Contiguous United States") +
   theme_void()
 ```
-
-*MICHAEL* Ensure that the units are correct below. 
 
 We plot the mortality rate.
 
@@ -1562,26 +1533,35 @@ We plot the mortality rate.
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=log(`Crude Rate`)), color="black", lwd=0.1) +
   scale_fill_gradientn(colours = viridis(5)) +
-  labs(title = "Crude Rate", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  labs(title = "Crude Rate (per 10k)", subtitle = "Contiguous United States") +
   theme_void()
 ```
 
-We then plot the urbanization categories. Note that the distribution of these categories is similar to the distribution of the population. 
+We plot the urbanization categories. Note that the distribution of these categories is similar to the distribution of the population. 
 
 ```{r}
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=`2013 Urbanization`), color="black", lwd=0.1) +
-  labs(title = "2013 Urbanization", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  labs(title = "2013 Urbanization", subtitle = "Contiguous United States") +
   theme_void()
 ```
 
-We then plot the estimated percentage of people identifying only as White. 
+We plot the simplified urbanization categories we created earlier.
+
+```{r}
+ggplot(us_cvd_sp_data) +
+  geom_sf(aes(fill=`2013 Urbanization Simplified`), color="black", lwd=0.1) +
+  labs(title = "2013 Urbanization, Simplified", subtitle = "Contiguous United States") +
+  theme_void()
+```
+
+We plot the estimated percentage of people identifying only as White. 
 
 ```{r}
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=Perc_W_only), color="black", lwd=0.1) +
   scale_fill_gradientn(colours = viridis(5)) +
-  labs(title = "Perc_W_only", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  labs(title = "Percent, White only", subtitle = "Contiguous United States") +
   theme_void()
 ```
 
@@ -1591,7 +1571,7 @@ We plot the estimated percentage of people identifying only as Black.
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=Perc_BA_only), color="black", lwd=0.1) +
   scale_fill_gradientn(colours = viridis(5)) +
-  labs(title = "Perc_B_only", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  labs(title = "Percent, Black or African American only", subtitle = "Contiguous United States") +
   theme_void()
 ```
 
@@ -1601,11 +1581,9 @@ We plot the estimated percentage of people identifying only as Asian.
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=Perc_A_only), color="black", lwd=0.1) +
   scale_fill_gradientn(colours = viridis(5)) +
-  labs(title = "Perc_A_only", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  labs(title = "Percent, Asian only", subtitle = "Contiguous United States") +
   theme_void()
 ```
-
-*MICHAEL* The definition of this must be revisited.
 
 We plot the estimated percentage of people identifying as Hispanic or Latino. 
 
@@ -1613,7 +1591,7 @@ We plot the estimated percentage of people identifying as Hispanic or Latino.
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=Perc_Hispanic_Latino), color="black", lwd=0.1) +
   scale_fill_gradientn(colours = viridis(5)) +
-  labs(title = "Perc_Hispanic_Latino", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  labs(title = "Percent, Hispanic or Latino", subtitle = "Contiguous United States") +
   theme_void()
 ```
 
@@ -1623,31 +1601,33 @@ Lastly, we plot the percentage of people that are insured.
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=perc_insured), color="black", lwd=0.1) +
   scale_fill_gradientn(colours = viridis(5)) +
-  labs(title = "perc_insured", subtitle = "Contiguous United States", caption = "Calculated with UCD data from CDC WONDER") +
+  labs(title = "Percent, Insured", subtitle = "Contiguous United States") +
   theme_void()
 ```
 
 Many of the variables in our analysis are spatially autocorrelated. We've confirmed this visually in our exploratory analysis. Because of this spatial autocorrelation, it is possible that with a combination of these variables, we can account for residual spatial autocorrelation in our data.
 
+We will be restricting our analysis to the Northeastern and Mid-Atlantic United States.
+
 ```{r}
 states_of_interest <- c("Maine",
-                      "New Hampshire",
-                      "Vermont",
-                      "Massachusetts",
-                      "Rhode Island",
-                      "Connecticut",
-                      "New York",
-                      "New Jersey",
-                      "Pennsylvania",
-                      "Delaware",
-                      "Maryland"
-                      )
+                        "New Hampshire",
+                        "Vermont",
+                        "Massachusetts",
+                        "Rhode Island",
+                        "Connecticut",
+                        "New York",
+                        "New Jersey",
+                        "Pennsylvania",
+                        "Delaware",
+                        "Maryland",
+                        "District of Columbia")
 
 us_cvd_sp_data <- us_cvd_sp_data %>%
   filter(state_name %in% states_of_interest)
 
 ggplot(us_cvd_sp_data) +
-  geom_sf()
+  geom_sf(aes(fill=`Crude Rate`))
 ```
 
 # Data analysis 
@@ -1658,25 +1638,25 @@ In regression analysis, we make several assumptions. Violations of these assumpt
 
 We will explore three models. The first model will explore the use of focal effects in regression. The second model will explore the use of both focal and lag effects in regression. The third model will explore the use of focal and lag effects, as well as the use of spatially defined variables. We'll discuss the implications of each type of variable in regression modeling along the way. 
 
-We need to determine a baseline of autocorrelation in the residuals. This will allow us to evaluate improvements in our model *with respect to the assumption of no residual spatial autocorrelation*. 
+## Baseline autocorrelation
+
+We need to determine a baseline for autocorrelation in the residuals. This will allow us to evaluate improvements in our model *with respect to the assumption of no residual spatial autocorrelation*. 
 
 To do this we fit a model with no covariates. By doing so, we can determine whether the presence of additional covariates accounts for any residual spatial autocorrelation present.
 
 ```{r}
 model0 <- glm(Deaths ~ 1, 
             family="poisson",
-            offset = log(Population_10k),
+            offset = log(Population_100k),
             data=us_cvd_sp_data,
             na.action = na.exclude)
 ```
 
-*MICHAEL* The choice of residuals here needs to be checked by an expert.
-
-To evaluate the extent of residual spatial autocorrelation, we append our analysis dataframe with the working residuals. This allows us to visually examine whether they are spatially autocorrelated. 
+To evaluate the extent of residual spatial autocorrelation, we append our analysis dataframe with the pearson residuals of the model. This allows us to visually examine whether they are spatially autocorrelated. 
 
 ```{r}
 us_cvd_sp_data <- us_cvd_sp_data %>%
-  mutate("residuals0"=residuals.glm(model0, "response"))
+  mutate("residuals0"=residuals.glm(model0, "pearson"))
 
 us_cvd_sp_data %>%
   ggplot() +
@@ -1684,16 +1664,11 @@ us_cvd_sp_data %>%
   scale_fill_gradient2(low="green", mid="white", high="red")
 ```
 
-*MICHAEL* This needs to be made more intuitive. This could be done by showing the output of each function.  
-
 Of course, visual inspection is always best supplemented with the appropriate statistical methods. In this case, we can create a spatial correlogram of Moran's I, an indicator of spatial autocorrelation.
 
 To do this we create a neighborhood list of class `nb` using the `poly2nb()` function. Row standardized spatial weights are then created from the resulting object with the `nb2list2()` function. These weights then allow us to compute values needed to plot a spatial correlogram with the `sp.correlogram()` function.
 
-*MICHAEL* Is removing the `NA` residuals here necessary. We should not have any. This could confuse the audience. 
-
 ```{r}
-us_cvd_sp_data <- us_cvd_sp_data[is.na(us_cvd_sp_data$residuals0)==FALSE,]
 nbrs_us_cvd_sp_data_sp <- poly2nb(us_cvd_sp_data, queen = TRUE)
 FFct_nb_w_test <- nb2listw(nbrs_us_cvd_sp_data_sp,style="W", zero.policy = TRUE)
 
@@ -1705,12 +1680,14 @@ We can then plot the spatial correlogram using the `plot()` function. Note that 
 As the number of spatial lags increases, there is less residual spatial autocorrelation.
 
 ```{r}
-plot(moran_cor_m0,ylim=c(-0.1, 0.4),main="Residuals from model 0")
+plot(moran_cor_m0,ylim=c(-0.1, 0.5),main="Residuals from model 0")
 ```
 
-Ideally, our model will produce a spatial correlogram where Moran's I is constant and zero at each spatial lag. This would mean that there is no residual spatial autocorrelation. Our model would be satisfy at least one assumption of regression. 
+Ideally, our model will produce a spatial correlogram where Moran's I is constant and zero at each spatial lag. This would mean that there is no residual spatial autocorrelation. Our model would satisfy at least one assumption of regression. 
 
-We fit with only focal effects, covariates that represent the values directly pertaining to the observations in this analysis.
+## Focal and lag effects
+
+We fit a model with only focal effects, covariates that represent the values directly pertaining to the observations in this analysis.
 
 ```{r}
 model1 <- glm(Deaths ~ median_age + 
@@ -1719,10 +1696,9 @@ model1 <- glm(Deaths ~ median_age +
               Perc_A_only +
               Perc_Hispanic_Latino + 
               median_income +
-              perc_insured + 
-              `2013 Urbanization`, 
+              perc_insured, 
             family="poisson",
-            offset = log(Population_10k),
+            offset = log(Population_100k),
             data=us_cvd_sp_data,
             na.action = na.exclude)
 ```
@@ -1743,15 +1719,14 @@ model2 <- glm(Deaths ~ median_age +
               median_income +
               median_income_lag +
               perc_insured +
-              perc_insured_lag + 
-              `2013 Urbanization`, 
+              perc_insured_lag, 
             family="poisson",
-            offset = log(Population_10k),
+            offset = log(Population_100k),
             data=us_cvd_sp_data,
             na.action = na.exclude)
 ```
 
-**MICHAEL** Must the below quote be cited or is this considered "widespread" knowledge in the field. 
+**MICHAEL:LEAH** Must the below quote be cited or is this considered "widespread" knowledge in the field. 
 
 Because of Tobler's First Law of Geography—which states that "everything is related to everything else, but near things are more related than distant things" ((Tobler W., (1970) "A computer movie simulating urban growth in the Detroit region". Economic Geography, 46(Supplement): 234–240.))—it shouldn't be a surprise that focal effects and lag effects are often collinear.
 
@@ -1872,9 +1847,7 @@ melt_cor3 %>%
   ylab("")
 ```
 
-**MICHAEL** Cite the paper sent to Leah below. 
-
-We can use the `vif()` function to evaluate whether there is multicollinearity in the models produced. `GVIF^(1/(2*Df))` values are more appropriate for the particular models we are employing. `GVIF^(1/(2*Df))` values should be squared and interpreted as one would interpret `VIF` values.
+We can use the `vif()` function to evaluate whether there is multicollinearity in the models produced. `GVIF^(1/(2*Df))` values are more appropriate for the particular models we are employing. `GVIF^(1/(2*Df))` values should be squared and interpreted as one would interpret `VIF` values. [Click here](https://www.jstor.org/stable/2290467?seq=1#metadata_info_tab_contents) for an academic paper describing `GVIF^(1/(2*Df))` values.
 
 ```{r}
 vif(model1)
@@ -1910,8 +1883,8 @@ It appears that the null model may have less spatial autocorrelation than model 
 
 ```{r}
 par(mfrow=c(1,2))
-plot(moran_cor_m0,ylim=c(-0.1, 0.4),main="Residuals from model 0")
-plot(moran_cor_m1,ylim=c(-0.1, 0.4),main="Residuals from model 1")
+plot(moran_cor_m0,ylim=c(-0.1, 0.5),main="Residuals from model 0")
+plot(moran_cor_m1,ylim=c(-0.1, 0.5),main="Residuals from model 1")
 ```
 
 We then plot the spatial correlograms for model 1 and model 2.
@@ -1920,29 +1893,11 @@ Model 2 appears to be a slight improvement from model 1.
 
 ```{r}
 par(mfrow=c(1,2))
-plot(moran_cor_m1,ylim=c(-0.1, 0.4),main="Residuals from model 1")
-plot(moran_cor_m2,ylim=c(-0.1, 0.4),main="Residuals from model 2")
+plot(moran_cor_m1,ylim=c(-0.1, 0.5),main="Residuals from model 1")
+plot(moran_cor_m2,ylim=c(-0.1, 0.5),main="Residuals from model 2")
 ```
 
-us_cvd_sp_data <- us_cvd_sp_data[is.na(us_cvd_sp_data$residuals1)==FALSE,]
-nbrs_us_cvd_sp_data_sp <- poly2nb(us_cvd_sp_data, queen = TRUE)
-FFct_nb_w_test <- nb2listw(nbrs_us_cvd_sp_data_sp,style="W", zero.policy = TRUE)
-
-Checking to see if average of neighbors is used. *This could be a great way to explain the weighted matrix. The code used in this case study appears somewhat black box-ish. It's important to not only describe the programming, but what it's actually doing.*
-
-*This code does not work after the inclusion of code that removes surrounding states from the spatial data and was made no longer a chunk. An adaptation will be very helpful.*
-
-us_cvd_sp_data <- us_cvd_sp_data %>% mutate(ID=row_number())
-us_cvd_sp_data %>% filter(GEOID==36047) %>% pull(median_income_lag)
-us_cvd_sp_data %>% filter(GEOID==36047) %>% pull(ID)
-us_cvd_sp_data %>% filter(ID %in% FFct_nb_w_test[[2]][[773]]) %>% dplyr::select(median_income, GEOID) %>% summarise(average=mean(median_income))
-
-
-FFct_nb_w_test[[2]][[773]]
-
-Code checks out! 
-
-There appears to be overdispersion present in both model 1 and model 2. 
+However, there appears to be overdispersion present in both model 1 and model 2. 
 
 ```{r}
 chi_square_model1 = sum(residuals(model1, type = "pearson")^2)
@@ -1964,18 +1919,17 @@ p_value_model2 = 1-pchisq(chi_square_model2, degrees_freedom_model2)
 paste("Pearson goodness of fit = ", round(chi_square_model2,2), ", df = ", degrees_freedom_model2, ", p-value = ", round(p_value_model2,10))
 ```
 
-We'll fit the same covariates against our outcome using a negative binomial model. This should relax the variance-mean assumption in Poisson models. 
+We'll fit the same covariates against our outcome using negative binomial models. This should relax the variance-mean assumption in Poisson models. 
 
 ```{r}
-model1_nb <- glm.nb(Deaths ~ median_age +
-                      Perc_W_only +
-                      Perc_BA_only +
-                      Perc_A_only + 
-                      Perc_Hispanic_Latino + 
+model1_nb <- glm.nb(Deaths ~ median_age + 
+              Perc_W_only +
+              Perc_BA_only + 
+              Perc_A_only +
+              Perc_Hispanic_Latino + 
               median_income +
-              perc_insured + 
-              `2013 Urbanization` + 
-              offset(log(Population_10k)), 
+              perc_insured +
+              offset(log(Population_100k)), 
             data=us_cvd_sp_data,
             na.action = na.exclude)
 
@@ -1993,8 +1947,7 @@ model2_nb <- glm.nb(Deaths ~ median_age +
               median_income_lag +
               perc_insured +
               perc_insured_lag +
-              `2013 Urbanization` +
-              offset(log(Population_10k)),
+              offset(log(Population_100k)),
             data=us_cvd_sp_data,
             na.action = na.exclude)
 ```
@@ -2012,7 +1965,7 @@ We repeat the process of saving the residuals to our analysis dataframe and calc
 
 ```{r}
 us_cvd_sp_data <- us_cvd_sp_data %>%
-  mutate("residuals1nb"=residuals.glm(model1_nb, "pearson"))
+  mutate("residuals1nb"=residuals(model1_nb, "pearson"))
 
 us_cvd_sp_data %>%
   ggplot() +
@@ -2020,7 +1973,7 @@ us_cvd_sp_data %>%
   scale_fill_gradient2(low="green", mid="white" ,high="red")
 
 us_cvd_sp_data <- us_cvd_sp_data %>%
-  mutate("residuals2nb"=residuals.glm(model2_nb, "pearson"))
+  mutate("residuals2nb"=residuals(model2_nb, "pearson"))
 
 us_cvd_sp_data %>% 
   ggplot() +
@@ -2037,30 +1990,32 @@ The lag effects in the negative binomial iteration of model 2 appear to better a
 
 ```{r}
 par(mfrow=c(1,2))
-plot(moran_cor_m0,ylim=c(-0.1, 0.4),main="Residuals from model 0")
-plot(moran_cor_m1nb,ylim=c(-0.1, 0.4),main="Residuals from model 1, nb")
+plot(moran_cor_m0,ylim=c(-0.1, 0.5),main="Residuals from model 0")
+plot(moran_cor_m1nb,ylim=c(-0.1, 0.5),main="Residuals from model 1, nb")
 
 par(mfrow=c(1,2))
-plot(moran_cor_m1nb,ylim=c(-0.1, 0.4),main="Residuals from model 1, nb")
-plot(moran_cor_m2nb,ylim=c(-0.1, 0.4),main="Residuals from model 2, nb")
+plot(moran_cor_m1nb,ylim=c(-0.1, 0.5),main="Residuals from model 1, nb")
+plot(moran_cor_m2nb,ylim=c(-0.1, 0.5),main="Residuals from model 2, nb")
 ```
 
-**MICHAEL** Must incorporate distance from the nearest large central metropolitan county as part of the exploratory analysis. 
-
-Lastly, we create a simpler model without lag effects. This model will instead use the nearest large central metropolitan county and its distance as covariates. During our exploratory analysis, you may have noticed that the crude rate map was similar to our map of distance from the nearest large central metropolitan county, with low value clusters situated in urban regions of the United States. This similarity could have emerged for a variety of reasons—and may possibly be spurious. However, it's widely known that Rural Americans experience greater cardiovascular disease mortality rates. Furthermore, distance almost always plays a role in spatial applications.
+We'll create a simpler model with a combination of focal and lag effects, as well as spatially defined covariates. During our exploratory analysis, you may have noticed that the crude rate map was similar to our map of distance from the nearest large central metropolitan county, with low value clusters situated in urban regions of the United States. This similarity could have emerged for a variety of reasons—and may possibly be spurious. However, it's widely known that Americans in rural areas experience greater cardiovascular disease mortality rates. Furthermore, distance almost always plays a role in spatial applications.
 
 Recall Tobler's First Law of Geography. It could be that large central metropolitan counties have protective factors. Assuming that counties nearer large central metropolitan counties are more similar to counties further away, it would make sense that such a covariate could explain much of the variability in the data. 
 
-*MICHAEL* Need to change/order the levels of the nearest large central metropolitan county.
+We fit a third model with focal and lag effects, as well as spatially defined covariates.
 
 ```{r}
-model3 <- glm(Deaths ~ median_age + 
-              median_income +
-              perc_insured +
+model3 <- glm(Deaths ~ Pop_dens + 
+                      median_income +
+                median_income + 
+                perc_insured +
+                perc_insured_lag +
+                Perc_W_only + 
+                Perc_A_only +
+                      median_age + 
+                median_age_lag + 
                 cen_dist_10km +
-                nearest_LC_metro,
-            family="poisson",
-            offset = log(Population_10k),
+                offset(log(Population_100k)),
             data=us_cvd_sp_data,
             na.action = na.exclude)
 ```
@@ -2094,24 +2049,17 @@ paste("Pearson goodness of fit = ", round(chi_square_model3,2), ", df = ", degre
 We fit a negative binomial model to relax the mean-variance assumption. 
 
 ```{r}
-us_cvd_sp_data %>%
-  ggplot() +
-  geom_sf(aes(fill=cen_dist_10km), color="transparent") + 
-  scale_fill_gradient2(low="white" ,high="black") +
-  theme_void()
-```
-
-```{r}
-model3_nb <- glm.nb(Deaths ~ Perc_W_only +
-                      Perc_A_only +
-                      median_age +
-                      median_age_lag + 
-              median_income_lag +
+model3_nb <- glm.nb(Deaths ~ Pop_dens + 
+                      median_income +
+                median_income + 
                 perc_insured +
-                cen_dist_10km +
-                state_name  + 
-                CrudeRate_lag2 +
-                offset(log(Population_10k)),
+                perc_insured_lag +
+                Perc_W_only + 
+                Perc_A_only +
+                      median_age + 
+                median_age_lag + 
+                cen_dist_10km + 
+                offset(log(Population_100k)),
             data=us_cvd_sp_data,
             na.action = na.exclude)
 ```
@@ -2129,60 +2077,48 @@ us_cvd_sp_data %>%
 
 moran_cor_m3nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals3nb,order=5,method="I",style="W", zero.policy = TRUE)
 
-plot(moran_cor_m3,ylim=c(-0.1, 0.4),main="Residuals from model 3")
-plot(moran_cor_m3nb,ylim=c(-0.1, 0.4),main="Residuals from model 3, nb")
+par(mfrow=c(1,2))
+
+plot(moran_cor_m3,ylim=c(-0.1, 0.5),main="Residuals from model 3")
+plot(moran_cor_m3nb,ylim=c(-0.1, 0.5),main="Residuals from model 3, nb")
 ```
+
+We then save the residuals, check for multicollinearity, and plot the residuals against fitted values.
 
 ```{r}
 us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("fitted3nb"=model3_nb$fitted.values)
-```
-
-```{r}
-us_cvd_sp_data %>%
-  ggplot() +
-  geom_sf(aes(fill=cen_dist_10km), color="transparent") + 
-  scale_fill_gradient2(low="white" ,high="black")
-```
-
-```{r}
 vif(model3_nb)
-```
-
-```{r}
-lowess_residuals <- ggplot(us_cvd_sp_data, aes(x=fitted3nb/Population_10k, y=residuals3nb)) +
-  geom_point(alpha=0.5, color="gray")  +
-  geom_hline(yintercept = 0, color="green") +
+lowess_residuals <- ggplot(us_cvd_sp_data, aes(x=fitted3nb, y=residuals3nb)) +
+  geom_point(alpha=0.25,size=2, color="black")  +
   geom_smooth(color="red") +
-  xlab("Fitted Value, Final Model") + 
+  xlab("Expected Count, Final Model") + 
   ylab("Pearson Residual")
-
 lowess_residuals
-```
-
-```{r}
-linear_reg_residuals <- ggplot(us_cvd_sp_data, aes(x=fitted3nb/Population_10k, y=residuals3nb)) +
-  geom_point(alpha=0.5, color="gray") +
-  geom_hline(yintercept = 0, color="green") +
-  geom_smooth(method="lm", color="red") + 
-  xlab("Fitted Value, Final Model") +
+linear_reg_residuals <- ggplot(us_cvd_sp_data, aes(x=fitted3nb, y=residuals3nb)) +
+  geom_point(alpha=0.25, size=2, color="black") +
+  geom_smooth(method="lm", color="red") +
+  xlab("Expected Count, Final Model") +
   ylab("Pearson Residual")
-
 linear_reg_residuals
 ```
+
+Our model appears to fit the data pretty well. Although some residuals are extremely high, there is no discernable pattern in those residuals.
+
+## Global Test for Autocorrelation
 
 We need to be careful about over-interpreting correlograms, particularly when the degree of autocorrelation is very small. 
 We can test for autocorrelation globally by estimating the Moran's I statistic. Again, we use the null model as a reference point. 
 
 ```{r}
-moran_test_m0 <- moran.mc(us_cvd_sp_data$residuals0, listw =FFct_nb_w_test,nsim = 999, zero.policy = TRUE)
+moran_test_m0 <- moran.mc(us_cvd_sp_data$residuals0, listw =FFct_nb_w_test,nsim = 9999, zero.policy = TRUE)
 moran_test_m0
 
-moran_test_m3nb <- moran.mc(us_cvd_sp_data$residuals3nb, listw =FFct_nb_w_test,nsim = 999, zero.policy = TRUE)
+moran_test_m3nb <- moran.mc(us_cvd_sp_data$residuals3nb, listw =FFct_nb_w_test,nsim = 9999, zero.policy = TRUE)
 moran_test_m3nb
 ```
 
-The Moran's I statistic for the selected model is close to 0 and is significant. This is a vast improvement over the null model. Remember, p-values—in this case psuedo p-values—are a function of sample size and we must be wary of multiple comparisons when we conduct multiple tests.
+The Moran's I statistic for the selected model is not near 0. We reject the null hypothesis that there is no spatial autocorrelation in the residuals.
 
 We can visualize how much more residual spatial autocorrelation was explained by comparing the correlograms we produced for each.
 
@@ -2225,7 +2161,7 @@ cor_df_plot <- cor_df %>%
   geom_point(size=2) +
   ggtitle("Moran's I Correlogram") + 
   xlim(1,5) + 
-  ylim(-0.1, 0.4) + 
+  ylim(-0.1, 0.5) + 
   xlab("Lag") +
   ylab("Moran's I") +
   theme_minimal()
@@ -2233,11 +2169,11 @@ cor_df_plot <- cor_df %>%
 cor_df_plot
 ```
 
-Again, the third model appears to have less residual spatial autocorrelation than the null model.
+Again, our final models appears to have less residual spatial autocorrelation than the null model.
 
-Given that our sample size is `r dim(us_cvd_sp_data)[1]` and the effect size is relatively small (about `r as.numeric(round(moran_test_m3nb$statistic, 3))`), twe can conclude that, if present, there is minimal residual spatial autocorrelation remains in our model. Analytically, we should be slightly more cautious of interpreting the uncertainty in the coefficients of our model. 
+Still, there is substantial residual spatial autocorrelation. Analytically, we should be very cautious of interpreting the uncertainty in the coefficients of our model. Our standard errors, and by extension the corresponding p-values, are significantly underestimated. 
 
-Residual spatial autocorrelation can have a large impact on the usefulness of our model. Had we not accounted for most of it it, our standard errors would have been greatly underestimated, amongst other things. Ultimately, such behavior in the residuals is indicative of unaccounted for information in a model.
+Residual spatial autocorrelation can have a large impact on the usefulness of our model. Ultimately, such behavior in the residuals is indicative of unaccounted for information in a model.
 
 In our model, it may be that there is an additional variable, such as the percent of the population that is educated, that could help account for any remaining residual spatial autocorreltaion.
 
@@ -2246,34 +2182,6 @@ summary(model3_nb)
 ```
 
 # Summary of results
-
-## Interpretation of analysis output
-
-Per percent increase in the estimated percent of people identifying as only White, the incident rate ratio for the mortality rate in a given county would be expected to decrease by a factor of `r as.numeric(round(exp(model3_nb$coefficients["Perc_W_only"]),5))`.
-
-Per percent increase in the estimated percent of people identifying as only Asian, the incident rate ratio for the mortality rate in a given county would be expected to decrease by a factor of `r as.numeric(round(exp(model3_nb$coefficients["Perc_A_only"]),5))`.
-
-Per one year increase in the median age, the incident rate ratio for the mortality rate in a given county would be expected to increase by a factor of `r as.numeric(round(exp(model3_nb$coefficients["median_age"]),5))`.
-
-Per one year increase in the average median age of surrounding counties, the incident rate ratio for the mortality rate in a given county would be expected to increase by a factor of `r as.numeric(round(exp(model3_nb$coefficients["median_age_lag"]),5))`.
-
-*This needs to be revised for the appropriate units*
-
-Per 10000 dollar increase in the average median income of surrounding counties, the incident rate ratio for the mortality rate in a given county would be expected to decrease by a factor of `r as.numeric(round(exp(model3_nb$coefficients["median_income_lag"]),5))`.
-
-Per percent increase in the percent of the population that is insured, the incident rate ratio for the mortality rate in a given county would be expected to decrease by a factor of `r as.numeric(round(exp(model3_nb$coefficients["perc_insured"]),5))`.
-
-Per 10 kilometer increase in the centroid distance from the nearest large central metropolitan county, the incident rate ratio for the mortality rate in a given county would be expected to decrease by a factor of `r as.numeric(round(exp(model3_nb$coefficients["cen_dist_10km"]),5))`.
-
-*Revise for units*
-
-Per one unit increase in the average crude mortality rate per *Units* of surrounding counties, the incident rate ratio for the mortality rate in a given county would be expected to decrease by a factor of `r as.numeric(round(exp(model3_nb$coefficients["CrudeRate_lag2"]),5))`.
-
-*Need to use the `relevel()` function to make New York the baseline*
-
-*MICHAEL:LEAH* This made need some rewriting below. I think it's a bit redundant to interpret each state variable. How should I rewrite this? I also don't want to brush it off entirely (as I have below.)
-
-Lastly, our model includes categorical variables to account for within state variation. Because of the number of states, we will not interpret interpret each coefficient.
 
 In this case study we examined three separate models. The first model was unable to account for a majority of residual spatial autocorrelation with focal effects alone. This is possibly because of the existence of lag effects. The second model was unable to account for residual spatial autocorrelation with the inclusion of focal effects and their respective lag effects; this is possibly because of the issues of multicollinearity that arose between covariates. The third model was able to account for a majority of the residual spatial autocorrelation with the inclusion of focal effects, lag effects, and spatially defined variables; this is possibly because an unknown set of relevant variables exists and has a distribution that altogether is similar to that of the spatially defined variables in our model. 
 
@@ -2300,7 +2208,7 @@ cor_df_plot_no_title <- cor_df %>%
   geom_line() + 
   geom_point(size=2) + 
   xlim(1,5) + 
-  ylim(-0.1, 0.4) + 
+  ylim(-0.1, 0.5) + 
   xlab("Lag") +
   ylab("Moran's I") +
   theme_minimal()
@@ -2365,7 +2273,7 @@ theme_OCS_void <- theme(axis.text = element_blank(),
         plot.caption = element_text(size=8, family = "Helvetica", color="black", hjust = 0))
 ```
 
-```{r, eval=FALSE}
+```{r, include=FALSE}
 A <- ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=`Mortality Rate (per 10k)`),color="black", size=0.25) + 
   scale_fill_gradientn(colors = viridis(10)) + 
@@ -2382,7 +2290,7 @@ cor_df_plot_no_title <- cor_df %>%
   geom_line() + 
   geom_point(size=2) + 
   xlim(1,5) + 
-  ylim(-0.1, 0.4) + 
+  ylim(-0.1, 0.5) + 
   xlab("Lag") +
   ylab("Moran's I") +
   theme_minimal()
@@ -2412,10 +2320,10 @@ header_plot <- plot_grid(title, sub_plots, ncol=1, rel_heights = c(0.1, 1))
 header_plot
 ```
 
-```{r, eval=FALSE}
+```{r, include=FALSE}
 ggsave(header_plot, filename = "header_plot.png", dpi = 600, width = 7, height = 5, units = "in")
 ```
 
 # Further Reading
 
-[Residual spatial autocorrelation in macroecological and biogeographical modeling: a review](https://link.springer.com/article/10.1186/s41610-019-0118-3)
+[Click here](https://link.springer.com/article/10.1186/s41610-019-0118-3) if you're interested in learning more about residual spatial autocorrelation
