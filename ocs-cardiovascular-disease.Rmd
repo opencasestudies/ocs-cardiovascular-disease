@@ -8,6 +8,7 @@ output:
         highlight: tango
         number_sections: false
 ---
+*fix population density*
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -31,7 +32,7 @@ Cardiovascular diseases are currently the leading cause of death in the United S
 
 ## Analysis goal
 
-We will identify county-level characteristics that are associated with cardiovascular disease mortality rates in the Northeastern United States.
+We will attempt to identify county-level characteristics that are associated with county-level cardiovascular disease mortality rates in the Northeastern United States. In the process will we create three models and determine whether any of the models accounts for residual spatial autocorrelation that may be present.
 
 ## Learning objectives
 
@@ -40,7 +41,7 @@ The learning objectives include:
 + data wrangling
 + count data regression
 + spatial smoothing
-+ modeling spatially dependent data
++ modeling spatially dependent area-level data
 
 ## Libraries
 
@@ -768,11 +769,11 @@ We then collapse the categories we created. This will allow us visualize the cat
 
 ```{r}
 ucd_heart <- ucd_heart %>% mutate("2013 Urbanization Simplified"=fct_collapse(`2013 Urbanization`,
-               large_metro=c("Large Fringe Metro",
+               `Large Metro`=c("Large Fringe Metro",
                   "Large Central Metro"),
-               small_medium_metro=c("Small Metro",
+               `Small/Medium Metro`=c("Small Metro",
                   "Medium Metro"),
-               non_metro=c("NonCore (Nonmetro)",
+               `Nonmetro`=c("NonCore (Nonmetro)",
                   "Micropolitan (Nonmetro)")))
 ```
 
@@ -1089,6 +1090,12 @@ Recall our neighborhood matrix. We can borrow information from area-level units�
 
 If we used the nearest queen adjacent area-level units to produce a summary statistics, we would be creating a first order lagged variable. 
 
+In models, these lagged variables, as covariates, are interpreted as the expected effect of surrounding values on the outcome of interest. Of course, the summary statistic used  (mean, median, etc.) has a large impact on the interpretation, but the overall idea is the same.
+
+This contrasts with the covariates that we are already aquainted with which represent the expected effect of the value of a given observation on the outcome—focal effects. 
+
+In models lag effects can be separated from focal effects—but not always. In our analysis you'll find that we pay a lot of attention to correlation and multicollinearity. This is because the values of both are often variable similar. This is something you should be aware of as we continue to analyze our data.
+
 Below we create a first order lagged variable.
 
 We create a weighted neighborhood list from the neighborhood list we created earlier. A weights matrix is then created from this weighted neighborhood list.
@@ -1112,7 +1119,7 @@ ggplot(us_cvd_sp_data) +
 
 ### 2^nd^ order lag
 
-If we smoothed using the second nearest adjacent area-level units, we would be creating a second order lagged variable. 
+If we smoothed using the second nearest adjacent area-level units, we would be creating a second order lagged variable. Inferential analyses are less likely to use second order lags than first order lags; for a second order lag to have meaning there would have to be a second order process; that is, there will have to be an effect on the outcome driven by the next nearest area-units—this is uncommon. Second order lags more than often are used in predictive modeling. Again, this isn't to say that second order lags don't have a place in inferential analyses, solely that second order effects are less common in practice than first order effects.  
 
 The process for creating a second order lagged variable, and so on, is the same.
 
@@ -1155,7 +1162,7 @@ If we take an extreme case, we can better visualize the implications such smooth
 
 Below, we take an average of the first through tenth order adjacent counties. 
 
-The end product is a map with much less variation. 
+The end product is a map with much less variation.
 
 ```{r}
 nb_ext_lag_list <- nblag(nbrs_us_cvd_sp_data_sp, maxlag = 10)
@@ -1200,6 +1207,8 @@ We won't be able to compute the arithmetic mean with missing values via matrix m
 sum(is.na(contiguous_us$Population_100k))
 ```
 
+Below we create a smoothed using the 1st through 10th nearest neighbors. 
+
 ```{r}
 contiguous_us_sp <- as(contiguous_us, 'Spatial')
 nbrs_contiguous_us_sp <- poly2nb(contiguous_us_sp, queen = TRUE)
@@ -1219,7 +1228,7 @@ ggplot(contiguous_us) +
 
 Broadly speaking, smoothing makes values look more like the global average, thereby reducing the global variance, exchanging exactitude in a map for the easier visualization. Smoothing creates fictitious values that are more than often overestimates or understimates of the true value. Despite this, we can use smoothing to advance our analysis with proper caution. Smoothing can help produce more interpretable visualizations as well as lagged variables that can be used in both inferential and predictive models. 
 
-Using the code we used earlier, we can create a function that produces a lagged covariate. This is more efficient that manually creating each variable with the same code and prevents errors. Conversely, errors in our function can be systematically applied to each of our covariates. Since we already have the code and are assured that it functions as we intend, this is not a problem.
+Using the code we used earlier, we can create a function that produces a lagged covariate. This is more efficient than manually creating each variable with the same code and prevents errors. Conversely, errors in our function can be systematically applied to each of our covariates. Since we already have the code and are assured that it functions as we intend, this is not a problem.
 
 ```{r}
 weighted_list <- nb2listw(nbrs_us_cvd_sp_data_sp,style="W", zero.policy = TRUE)
@@ -1275,14 +1284,10 @@ As done so previously, we check the projection of the spatial data we are workin
 st_crs(us_cvd_sp_data)
 ```
 
-We then create an dataframe of the large central metropolitan counties. 
+We then create an dataframe of the large central metropolitan counties.
 
 ```{r}
 LC_metro <- us_cvd_sp_data %>% filter(`2013 Urbanization`=="Large Central Metro") %>% mutate(index=row_number())
-
-st_agr(us_cvd_sp_data) <- "constant"
-
-st_agr(LC_metro) <- "constant"
 ```
 
 We want to compute the shortest length between each county, the curve of which on a sphere is referred to as a geodesic. The length of the geodesic is also known as great circle distance. To calculate great circle distance, we need to transform our dataframe from a projected coordinate system based on a two-dimensional plane back to a geographic coordinate system based on the angles produced relative to earth's center. Additionally, we need to obtain the centroids of each county to calculate this distance. We can calculate the distance between boundary lines, but this would make it difficult to differentiate the distance between a county and itself from and the distance between a county and its neighbor. For this analysis, we will use county centroids to make this distinction. In a separate analysis, it may be more appropriate to calculate the distance between boundary lines. Note that the distance between boundaries will always be shorter than the distance between centroids.
@@ -1330,9 +1335,11 @@ us_cvd_sp_data <- us_cvd_sp_data %>%
   left_join(LC_metro, by="index")
 ```
 
-## Population Density
+## Population density
 
 Here we create a variable representing population density.
+
+We convert to square miles using a constant provided by the US Census Bureau. 
 
 ```{r}
 class(us_cvd_sp_data$Population)
@@ -1340,7 +1347,7 @@ us_cvd_sp_data$Population <- as.numeric(us_cvd_sp_data$Population)
 class(us_cvd_sp_data$ALAND)
 
 us_cvd_sp_data <- us_cvd_sp_data %>%
-  mutate(Pop_dens=Population/ALAND) 
+  mutate(Pop_dens=Population/(ALAND/2,589,988)) 
 ```
 
 ## Nearest neighbor imputation
@@ -1359,10 +1366,6 @@ First, we separate our dataframe in two by whether an observation has a missing 
 mortality_missing <- us_cvd_sp_data %>% filter(is.na(Deaths))
 
 mortality_complete <- us_cvd_sp_data %>% filter(!is.na(Deaths))
-
-st_agr(mortality_missing) <- "constant"
-
-st_agr(mortality_complete) <- "constant"
 ```
 
 We then obtain county centroids which we then transform to the **World Geodetic System, 1984** coordinate system.
@@ -1477,6 +1480,32 @@ Our analysis dataframe has no missing values.
 
 Let's explore the data.
 
+We will be restricting our analysis to the Northeastern and Mid-Atlantic United States.
+
+```{r}
+states_of_interest <- c("Maine",
+                        "New Hampshire",
+                        "Vermont",
+                        "Massachusetts",
+                        "Rhode Island",
+                        "Connecticut",
+                        "New York",
+                        "New Jersey",
+                        "Pennsylvania",
+                        "Delaware",
+                        "Maryland",
+                        "District of Columbia")
+
+us_cvd_sp_data <- us_cvd_sp_data %>%
+  filter(state_name %in% states_of_interest)
+
+ggplot(us_cvd_sp_data) +
+  geom_sf(fill="white",color="black") + 
+  theme_void() + 
+  labs(title = "Northeastern and Mid-Atlantic United States",
+       subtitle = "Analysis Region")
+```
+
 Plotting distance between large central metropolitan counties gives us a rough idea of what areas are rural and what areas are urban. 
 
 ```{r}
@@ -1513,7 +1542,7 @@ The same issue emerges when plotting the population of each county.
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=Population_100k), color="black", lwd=0.1) +
   scale_fill_gradientn(colours = viridis(5)) +
-  labs(title = "Population (10,000 person-units)", subtitle = "Contiguous United States") +
+  labs(title = "Population (100,000 person-units)", subtitle = "Contiguous United States") +
   theme_void()
 ```
 
@@ -1523,7 +1552,7 @@ To resolve that issue we again plot the natural log of the value + 1. In this ca
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=log(Population_100k + 1)), color="black", lwd=0.1) +
   scale_fill_gradientn(colours = viridis(5)) +
-  labs(title = "log(Population (10,000 person-units) + 1)", subtitle = "Contiguous United States") +
+  labs(title = "log(Population (100,000 person-units) + 1)", subtitle = "Contiguous United States") +
   theme_void()
 ```
 
@@ -1533,7 +1562,7 @@ We plot the mortality rate.
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=log(`Crude Rate`)), color="black", lwd=0.1) +
   scale_fill_gradientn(colours = viridis(5)) +
-  labs(title = "Crude Rate (per 10k)", subtitle = "Contiguous United States") +
+  labs(title = "Crude Rate (per 100k)", subtitle = "Contiguous United States") +
   theme_void()
 ```
 
@@ -1543,7 +1572,8 @@ We plot the urbanization categories. Note that the distribution of these categor
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=`2013 Urbanization`), color="black", lwd=0.1) +
   labs(title = "2013 Urbanization", subtitle = "Contiguous United States") +
-  theme_void()
+  theme_void() + 
+  scale_fill_manual(values = viridis(length(levels(us_cvd_sp_data$`2013 Urbanization`))))
 ```
 
 We plot the simplified urbanization categories we created earlier.
@@ -1552,7 +1582,8 @@ We plot the simplified urbanization categories we created earlier.
 ggplot(us_cvd_sp_data) +
   geom_sf(aes(fill=`2013 Urbanization Simplified`), color="black", lwd=0.1) +
   labs(title = "2013 Urbanization, Simplified", subtitle = "Contiguous United States") +
-  theme_void()
+  theme_void() + 
+  scale_fill_manual(values = viridis(length(levels(us_cvd_sp_data$`2013 Urbanization Simplified`))))
 ```
 
 We plot the estimated percentage of people identifying only as White. 
@@ -1607,42 +1638,21 @@ ggplot(us_cvd_sp_data) +
 
 Many of the variables in our analysis are spatially autocorrelated. We've confirmed this visually in our exploratory analysis. Because of this spatial autocorrelation, it is possible that with a combination of these variables, we can account for residual spatial autocorrelation in our data.
 
-We will be restricting our analysis to the Northeastern and Mid-Atlantic United States.
-
-```{r}
-states_of_interest <- c("Maine",
-                        "New Hampshire",
-                        "Vermont",
-                        "Massachusetts",
-                        "Rhode Island",
-                        "Connecticut",
-                        "New York",
-                        "New Jersey",
-                        "Pennsylvania",
-                        "Delaware",
-                        "Maryland",
-                        "District of Columbia")
-
-us_cvd_sp_data <- us_cvd_sp_data %>%
-  filter(state_name %in% states_of_interest)
-
-ggplot(us_cvd_sp_data) +
-  geom_sf(aes(fill=`Crude Rate`))
-```
-
 # Data analysis 
 
 Let's analyze our data!
 
 In regression analysis, we make several assumptions. Violations of these assumptions can impact the validity of our model. With spatial data, one of the main concerns is that a model produced will violate the assumption that the residuals are autocorrelated. To ensure our model is not invalid, we employ methods to examine the level of autocorrelation in the residuals of a model. Note that lack of autocorrelation does not mean the model is valid; it only means that—with respect to the assumption of no residual autocorrelation—the model is not invalid. The model may still independently violate another assumption even if residual spatial autocorrelation is accounted for. 
 
-We will explore three models. The first model will explore the use of focal effects in regression. The second model will explore the use of both focal and lag effects in regression. The third model will explore the use of focal and lag effects, as well as the use of spatially defined variables. We'll discuss the implications of each type of variable in regression modeling along the way. 
+We will explore three models. The first model will explore the use of focal effects in regression. The second model will explore the use of both focal and lag effects in regression. The third model will employ covariates that we believe have a scientific basis for their inclusion.
+
+The goal of this analysis is to determine whether one of our models properly accounts for residual spatial autocorrelation that may be present. We will discuss the use of focal and lag variables as covariates in our model. 
 
 ## Baseline autocorrelation
 
-We need to determine a baseline for autocorrelation in the residuals. This will allow us to evaluate improvements in our model *with respect to the assumption of no residual spatial autocorrelation*. 
+We need to determine a baseline measures for autocorrelation in the residuals. This will allow us to evaluate improvements in our model *with respect our goal of accounting for any residual spatial autocorrelation that may be present*. 
 
-To do this we fit a model with no covariates. By doing so, we can determine whether the presence of additional covariates accounts for any residual spatial autocorrelation present.
+To do this we fit a model with no covariates.
 
 ```{r}
 model0 <- glm(Deaths ~ 1, 
@@ -1660,8 +1670,10 @@ us_cvd_sp_data <- us_cvd_sp_data %>%
 
 us_cvd_sp_data %>%
   ggplot() +
-  geom_sf(aes(fill=residuals0), color="transparent") + 
-  scale_fill_gradient2(low="green", mid="white", high="red")
+  geom_sf(aes(fill=residuals0), color="black") + 
+  scale_fill_gradient2(low="green", mid="white", high="red") + 
+  theme_void() + 
+  labs(title = "Pearson Residuals, Null Model")
 ```
 
 Of course, visual inspection is always best supplemented with the appropriate statistical methods. In this case, we can create a spatial correlogram of Moran's I, an indicator of spatial autocorrelation.
@@ -1670,9 +1682,11 @@ To do this we create a neighborhood list of class `nb` using the `poly2nb()` fun
 
 ```{r}
 nbrs_us_cvd_sp_data_sp <- poly2nb(us_cvd_sp_data, queen = TRUE)
-FFct_nb_w_test <- nb2listw(nbrs_us_cvd_sp_data_sp,style="W", zero.policy = TRUE)
+weighted_list <- nb2listw(nbrs_us_cvd_sp_data_sp,style="W", zero.policy = TRUE)
 
-moran_cor_m0 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals0,order=5,method="I",style="W", zero.policy = TRUE)
+lags <- 8
+
+moran_cor_m0 <-sp.correlogram(neighbours=weighted_list$neighbours,var=us_cvd_sp_data$residuals0,order=lags,method="I",style="W", zero.policy = TRUE)
 ```
 
 We can then plot the spatial correlogram using the `plot()` function. Note that many of the values and bands are positive and do not intersect zero. This is indicative of positive spatial autocorrelation in our residuals, meaning the areas nearby another have similar residuals. Were the values negative, it would be indicative of negative spatial autocorrelation, meaning values nearby another are more dissimilar to one another. 
@@ -1730,7 +1744,7 @@ model2 <- glm(Deaths ~ median_age +
 
 Because of Tobler's First Law of Geography—which states that "everything is related to everything else, but near things are more related than distant things" ((Tobler W., (1970) "A computer movie simulating urban growth in the Detroit region". Economic Geography, 46(Supplement): 234–240.))—it shouldn't be a surprise that focal effects and lag effects are often collinear.
 
-In a regression model, the presence of both can result in multicollinearity. Multicollinearity would violate another regression assumption. 
+In a regression model, the presence of both can result in multicollinearity. Multicollinearity would violate a different regression assumption. 
 
 Recall that the presence of multicollinearity means that there is correlation between variables. However, high correlation does not mean that there is multicollinearity. 
 
@@ -1847,7 +1861,7 @@ melt_cor3 %>%
   ylab("")
 ```
 
-We can use the `vif()` function to evaluate whether there is multicollinearity in the models produced. `GVIF^(1/(2*Df))` values are more appropriate for the particular models we are employing. `GVIF^(1/(2*Df))` values should be squared and interpreted as one would interpret `VIF` values. [Click here](https://www.jstor.org/stable/2290467?seq=1#metadata_info_tab_contents) for an academic paper describing `GVIF^(1/(2*Df))` values.
+We can use the `vif()` function to evaluate whether there is multicollinearity in the models produced. As we can see from the output below, very high variance inflation factors are produced for some of the variables that we had earlier identified as being highly correlated.
 
 ```{r}
 vif(model1)
@@ -1862,24 +1876,28 @@ us_cvd_sp_data <- us_cvd_sp_data %>%
 
 us_cvd_sp_data %>%
   ggplot() +
-  geom_sf(aes(fill=residuals1), color="transparent") + 
-  scale_fill_gradient2(low="green", mid="white", high="red")
+  geom_sf(aes(fill=residuals1), color="black") + 
+  scale_fill_gradient2(low="green", mid="white", high="red") + 
+  theme_void() +
+  labs(title = "Pearson Residuals, Model 1",
+       subtitle = "Poisson Model")
 
 us_cvd_sp_data <- us_cvd_sp_data %>%
   mutate("residuals2"=residuals.glm(model2, "response"))
 
 us_cvd_sp_data %>% 
   ggplot() +
-  geom_sf(aes(fill=residuals2), color="transparent") + 
-  scale_fill_gradient2(low="green", mid="white", high="red")
+  geom_sf(aes(fill=residuals2), color="black") + 
+  scale_fill_gradient2(low="green", mid="white", high="red") + 
+  theme_void() +
+  labs(title = "Pearson Residuals, Model 2",
+       subtitle = "Poisson Model")
 
-moran_cor_m1 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals1,order=5,method="I",style="W", zero.policy = TRUE)
-moran_cor_m2 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals2,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m1 <-sp.correlogram(neighbours=weighted_list$neighbours,var=us_cvd_sp_data$residuals1,order=lags,method="I",style="W", zero.policy = TRUE)
+moran_cor_m2 <-sp.correlogram(neighbours=weighted_list$neighbours,var=us_cvd_sp_data$residuals2,order=lags,method="I",style="W", zero.policy = TRUE)
 ```
 
 We plot the spatial correlograms for the null model and model 1.
-
-It appears that the null model may have less spatial autocorrelation than model 1.
 
 ```{r}
 par(mfrow=c(1,2))
@@ -1888,8 +1906,6 @@ plot(moran_cor_m1,ylim=c(-0.1, 0.5),main="Residuals from model 1")
 ```
 
 We then plot the spatial correlograms for model 1 and model 2.
-
-Model 2 appears to be a slight improvement from model 1. 
 
 ```{r}
 par(mfrow=c(1,2))
@@ -1952,8 +1968,6 @@ model2_nb <- glm.nb(Deaths ~ median_age +
             na.action = na.exclude)
 ```
 
-Model 1 may have some multicollinearity that should be noted. Model 2 may have some multicollinearity that could be of concern. Remember: `GVIF^(1/(2*Df))` values should be squared and then interpreted as `VIF` values. Although there is no absolute guideline for `VIF` values, `VIF` values of about 5 should be noted and `VIF` values of about 10 or more should be concerning. If we put this in terms of `GVIF^(1/(2*Df))` values, `GVIF^(1/(2*Df))` values of about 2.25 should be noted and `GVIF^(1/(2*Df))` values of about 3.15 or more should be concerning. 
-
 ```{r}
 vif(model1_nb)
 vif(model2_nb)
@@ -1980,8 +1994,8 @@ us_cvd_sp_data %>%
   geom_sf(aes(fill=residuals2nb), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white", high="red")
 
-moran_cor_m1nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals1nb,order=5,method="I",style="W", zero.policy = TRUE)
-moran_cor_m2nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals2nb,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m1nb <-sp.correlogram(neighbours=weighted_list$neighbours,var=us_cvd_sp_data$residuals1nb,order=lags,method="I",style="W", zero.policy = TRUE)
+moran_cor_m2nb <-sp.correlogram(neighbours=weighted_list$neighbours,var=us_cvd_sp_data$residuals2nb,order=lags,method="I",style="W", zero.policy = TRUE)
 ```
 
 We then compare the negative binomial models produced to our null model. 
@@ -2002,6 +2016,8 @@ We'll create a simpler model with a combination of focal and lag effects, as wel
 
 Recall Tobler's First Law of Geography. It could be that large central metropolitan counties have protective factors. Assuming that counties nearer large central metropolitan counties are more similar to counties further away, it would make sense that such a covariate could explain much of the variability in the data. 
 
+We also include our variable representing population density to account for the protective effect urbanicity may have on a county's corresponding mortality rate.
+
 We fit a third model with focal and lag effects, as well as spatially defined covariates.
 
 ```{r}
@@ -2013,11 +2029,16 @@ model3 <- glm(Deaths ~ Pop_dens +
                 Perc_W_only + 
                 Perc_A_only +
                       median_age + 
-                median_age_lag + 
                 cen_dist_10km +
                 offset(log(Population_100k)),
             data=us_cvd_sp_data,
             na.action = na.exclude)
+```
+
+The covariates in our above model demonstrate a substantial improvement in the variance inflation factors calculated.  
+
+```{r}
+vif(model3)
 ```
 
 We calculate the values needed for the spatial correlogram. 
@@ -2031,7 +2052,7 @@ us_cvd_sp_data %>%
   geom_sf(aes(fill=residuals3), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white" ,high="red")
 
-moran_cor_m3 <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals3,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m3 <-sp.correlogram(neighbours=weighted_list$neighbours,var=us_cvd_sp_data$residuals3,order=lags,method="I",style="W", zero.policy = TRUE)
 ```
 
 We check for overdispersion.
@@ -2056,8 +2077,7 @@ model3_nb <- glm.nb(Deaths ~ Pop_dens +
                 perc_insured_lag +
                 Perc_W_only + 
                 Perc_A_only +
-                      median_age + 
-                median_age_lag + 
+                      median_age +
                 cen_dist_10km + 
                 offset(log(Population_100k)),
             data=us_cvd_sp_data,
@@ -2075,7 +2095,7 @@ us_cvd_sp_data %>%
   geom_sf(aes(fill=residuals3nb), color="transparent") + 
   scale_fill_gradient2(low="green", mid="white" ,high="red")
 
-moran_cor_m3nb <-sp.correlogram(neighbours=FFct_nb_w_test$neighbours,var=us_cvd_sp_data$residuals3nb,order=5,method="I",style="W", zero.policy = TRUE)
+moran_cor_m3nb <-sp.correlogram(neighbours=weighted_list$neighbours,var=us_cvd_sp_data$residuals3nb,order=lags,method="I",style="W", zero.policy = TRUE)
 
 par(mfrow=c(1,2))
 
@@ -2105,16 +2125,17 @@ linear_reg_residuals
 
 Our model appears to fit the data pretty well. Although some residuals are extremely high, there is no discernable pattern in those residuals.
 
-## Global Test for Autocorrelation
+## Global test for autocorrelation
 
 We need to be careful about over-interpreting correlograms, particularly when the degree of autocorrelation is very small. 
-We can test for autocorrelation globally by estimating the Moran's I statistic. Again, we use the null model as a reference point. 
+We can test for autocorrelation globally by estimating the Moran's I statistic. We are estimating the Moran's I statistic using a permutation test; this is less sensitive to outliers in our data than the "normal" Moran's I statistics.
+Again, we use the null model as a reference point. 
 
 ```{r}
-moran_test_m0 <- moran.mc(us_cvd_sp_data$residuals0, listw =FFct_nb_w_test,nsim = 9999, zero.policy = TRUE)
+moran_test_m0 <- moran.mc(us_cvd_sp_data$residuals0, listw =weighted_list,nsim = 9999, zero.policy = TRUE)
 moran_test_m0
 
-moran_test_m3nb <- moran.mc(us_cvd_sp_data$residuals3nb, listw =FFct_nb_w_test,nsim = 9999, zero.policy = TRUE)
+moran_test_m3nb <- moran.mc(us_cvd_sp_data$residuals3nb, listw =weighted_list,nsim = 9999, zero.policy = TRUE)
 moran_test_m3nb
 ```
 
@@ -2122,60 +2143,79 @@ The Moran's I statistic for the selected model is not near 0. We reject the null
 
 We can visualize how much more residual spatial autocorrelation was explained by comparing the correlograms we produced for each.
 
-```{r}
-Morans_I <- c(moran_cor_m0["res"][[1]][,1],
-              moran_cor_m3nb["res"][[1]][,1]
-              )
+Before doing so, let's take a quick look at the help file of `sp.correlogram`
 
-Model <- c(rep("Null Model",5),
-           rep("Final Model",5)
-           )
-
-Lag <- rep(seq(1,5,by=1),2)
-
-cor_df <- as.data.frame(cbind(Morans_I, Model, Lag))
-
-sapply(cor_df, class)
-
-cor_df$Morans_I <- as.numeric(as.character(cor_df$Morans_I))
-
-sapply(cor_df, class)
-
-cor_df$Model <- factor(cor_df$Model,
-                       levels=c("Final Model",
-                                              "Null Model"
-                                              ),
-                       ordered = TRUE
-                       )
-
-sapply(cor_df, class)
-
-cor_df$Lag <- as.numeric(as.character(cor_df$Lag))
-
-sapply(cor_df, class)
-
-cor_df_plot <- cor_df %>%
-  ggplot(aes(x=Lag, y=Morans_I, color=Model)) +
-  geom_hline(yintercept = 0, color="black") + 
-  geom_line() + 
-  geom_point(size=2) +
-  ggtitle("Moran's I Correlogram") + 
-  xlim(1,5) + 
-  ylim(-0.1, 0.5) + 
-  xlab("Lag") +
-  ylab("Moran's I") +
-  theme_minimal()
-
-cor_df_plot
+```{r, eval=FALSE}
+?sp.correlogram
 ```
 
-Again, our final models appears to have less residual spatial autocorrelation than the null model.
+If we look at the `Details` section, we see that the uncertainty bands are calculated by adding twice the square root of the variance.  
 
-Still, there is substantial residual spatial autocorrelation. Analytically, we should be very cautious of interpreting the uncertainty in the coefficients of our model. Our standard errors, and by extension the corresponding p-values, are significantly underestimated. 
+```{r, echo=FALSE}
+include_graphics("sp.correlogram_help_file.png")
+```
 
-Residual spatial autocorrelation can have a large impact on the usefulness of our model. Ultimately, such behavior in the residuals is indicative of unaccounted for information in a model.
+From the `Value` section of the help file, we also learn that the `res` element returned has three vectors. Of these three vectors is a vector for our point estimates and the corresponding variance. 
 
-In our model, it may be that there is an additional variable, such as the percent of the population that is educated, that could help account for any remaining residual spatial autocorreltaion.
+```{r, echo=FALSE}
+include_graphics("sp.correlogram_help_file_2.png")
+```
+
+We can employ this information to create a comprehensive visualization comparing our null and final model. 
+
+```{r}
+names(moran_cor_m0)
+names(moran_cor_m3nb)
+
+moran_cor_nullmodel <- data.frame(moran_cor_m0[["res"]])
+
+colnames(moran_cor_nullmodel) <- c("Moran's I, Pearson Residuals",
+                                   "Expectation",
+                                   "Variance")
+
+moran_cor_nullmodel <- moran_cor_nullmodel %>%
+  mutate(Lag=1:lags,
+         c_band=sqrt(Variance) * 2,
+         LL=`Moran's I, Pearson Residuals` - c_band,
+         UL=`Moran's I, Pearson Residuals` + c_band)
+
+moran_cor_fullmodel <- data.frame(moran_cor_m3nb[["res"]])
+
+colnames(moran_cor_fullmodel) <- c("Moran's I, Pearson Residuals",
+                                   "Expectation",
+                                   "Variance")
+
+moran_cor_fullmodel <- moran_cor_fullmodel %>%
+  mutate(Lag=1:lags,
+         c_band=sqrt(Variance) * 2,
+         LL=`Moran's I, Pearson Residuals` - c_band,
+         UL=`Moran's I, Pearson Residuals` + c_band)
+
+moran_cor_nullmodel$Type <- "Null Model"
+moran_cor_fullmodel$Type <- "Final Model"
+
+cor_df <- moran_cor_fullmodel %>%
+  bind_rows(moran_cor_nullmodel) %>%
+  dplyr::select(`Moran's I, Pearson Residuals`, LL, UL, Type, Lag)
+  
+head(cor_df)
+
+cor_df_plot_colors <- c("red", "black")
+
+ggplot(cor_df, aes(x=Lag, y=`Moran's I, Pearson Residuals`, color=Type)) + 
+  geom_pointrange(aes(ymin=LL, ymax=UL), position = position_dodge(width = 0.5)) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  scale_color_manual(values = cor_df_plot_colors) + 
+  scale_x_continuous(breaks = 1:lags,
+                     labels = 1:lags,
+                     limits = c(0,lags+1)) +
+  theme_minimal() + 
+  labs(title = "Spatial Autocorrelation of Pearson Residuals")
+```
+
+We need to be careful about over-interpreting spatial correlograms. Lag orders further away may spuriously show spatial autocorrelation. Still, the spatial correlogram is consistent with our findings from the Moran's I statistics we estimated. Nearby lag orders demonstrate residual spatial autocorrelation in both the null and final model. The variables we introduced into the final model only account for a fraction of the residual spatial autocorrelation seen in the null model. 
+
+Lastly, we print the output from our final model.
 
 ```{r}
 summary(model3_nb)
@@ -2183,9 +2223,13 @@ summary(model3_nb)
 
 # Summary of results
 
-In this case study we examined three separate models. The first model was unable to account for a majority of residual spatial autocorrelation with focal effects alone. This is possibly because of the existence of lag effects. The second model was unable to account for residual spatial autocorrelation with the inclusion of focal effects and their respective lag effects; this is possibly because of the issues of multicollinearity that arose between covariates. The third model was able to account for a majority of the residual spatial autocorrelation with the inclusion of focal effects, lag effects, and spatially defined variables; this is possibly because an unknown set of relevant variables exists and has a distribution that altogether is similar to that of the spatially defined variables in our model. 
+Our final model appears to have less residual spatial autocorrelation than the null model. Still, there is substantial residual spatial autocorrelation. Analytically, we should be very cautious of interpreting the output from this model. Our standard errors, and by extension the corresponding p-values, are substantially underestimated. 
 
-We summarize our model below with a set of maps and graphs.
+Residual spatial autocorrelation can have a large impact on the usefulness of our model. Ultimately, such behavior in the residuals is indicative of unaccounted for relationships in our data, relationships that, if considered, would account for the residual spatial autocorrelation present.
+
+In this case study we examined three separate models. None of the three models we considered were able to account for residual spatial autocorrelation present. We discussed the possibility of multicollinearity between focal and lag variable pairs, used diagnostic tools for residual spatial autocorrelation, and introduced spatial data wrangling and visualization. Lastly, we presented techniques to deal with issues that commonly emerge in area-level spatial data analysis. 
+
+We summarize our final model below with a set of maps and graphs.
 
 ```{r}
 us_cvd_sp_data <- us_cvd_sp_data %>%
@@ -2202,18 +2246,16 @@ B <- ggplot(us_cvd_sp_data) +
   scale_fill_gradient2() +
   theme_void()
 
-cor_df_plot_no_title <- cor_df %>%
-  ggplot(aes(x=Lag, y=Morans_I, color=Model)) +
-  geom_hline(yintercept = 0, color="black") + 
-  geom_line() + 
-  geom_point(size=2) + 
-  xlim(1,5) + 
-  ylim(-0.1, 0.5) + 
-  xlab("Lag") +
-  ylab("Moran's I") +
+cor_df_plot<- ggplot(cor_df, aes(x=Lag, y=`Moran's I, Pearson Residuals`, color=Type)) + 
+  geom_pointrange(aes(ymin=LL, ymax=UL), position = position_dodge(width = 0.5)) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  scale_color_manual(values = cor_df_plot_colors) + 
+  scale_x_continuous(breaks = 1:lags,
+                     labels = 1:lags,
+                     limits = c(0,lags+1)) +
   theme_minimal()
 
-C <- cor_df_plot_no_title +
+C <- cor_df_plot +
   theme_minimal()
 
 D <- lowess_residuals +
@@ -2284,18 +2326,16 @@ B <- ggplot(us_cvd_sp_data) +
   scale_fill_gradient2() +
   theme_OCS_void
 
-cor_df_plot_no_title <- cor_df %>%
-  ggplot(aes(x=Lag, y=Morans_I, color=Model)) +
-  geom_hline(yintercept = 0, color="black") + 
-  geom_line() + 
-  geom_point(size=2) + 
-  xlim(1,5) + 
-  ylim(-0.1, 0.5) + 
-  xlab("Lag") +
-  ylab("Moran's I") +
+cor_df_plot<- ggplot(cor_df, aes(x=Lag, y=`Moran's I, Pearson Residuals`, color=Type)) + 
+  geom_pointrange(aes(ymin=LL, ymax=UL), position = position_dodge(width = 0.5)) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  scale_color_manual(values = cor_df_plot_colors) + 
+  scale_x_continuous(breaks = 1:lags,
+                     labels = 1:lags,
+                     limits = c(0,lags+1)) +
   theme_minimal()
 
-C <- cor_df_plot_no_title +
+C <- cor_df_plot +
   theme_OCS
 
 D <- lowess_residuals +
