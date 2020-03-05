@@ -1339,7 +1339,7 @@ us_cvd_sp_data <- us_cvd_sp_data %>%
 
 Here we create a variable representing population density.
 
-We convert to square miles using a constant provided by the US Census Bureau. 
+We convert to square miles using a constant provided by the US Census Bureau [here](https://www.census.gov/quickfacts/fact/note/US/LND110210). 
 
 ```{r}
 class(us_cvd_sp_data$Population)
@@ -1347,7 +1347,7 @@ us_cvd_sp_data$Population <- as.numeric(us_cvd_sp_data$Population)
 class(us_cvd_sp_data$ALAND)
 
 us_cvd_sp_data <- us_cvd_sp_data %>%
-  mutate(Pop_dens=Population/(ALAND/2,589,988)) 
+  mutate(Pop_dens=Population/(ALAND/2589988)) 
 ```
 
 ## Nearest neighbor imputation
